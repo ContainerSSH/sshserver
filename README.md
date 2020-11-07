@@ -9,3 +9,39 @@
 This library provides an overlay for the built-in go SSH server library that makes it easier to handle.
 
 <p align="center"><strong>Note: This is a developer documentation.</strong><br />The user documentation for ContainerSSH is located at <a href="https://containerssh.github.io">containerssh.github.io</a>.</p>
+
+## Using this library
+
+This library provides a friendlier way to handle SSH requests than with the built-in SSH library. As a primary entry
+point you will need to create and run the SSH server:
+
+```go
+//Create the server
+server, err := sshserver.New(
+    cfg,
+    handler,
+    logger,
+)
+if err != nil {
+    // Handle configuration errors
+    log.Fatalf("%v", err)
+}
+
+defer func() {
+    // The Run method will run the server and return when the server is shut down.
+    if err := server.Run(); err != nil {
+        // Handle errors while running the server
+    }
+}()
+
+time.Sleep(60 * time.Second)
+
+// Shut down the server. Pass a context to indicate how long the server should wait for existing connections to finish.
+// This function will return when the server has stopped. 
+server.Shutdown(
+    context.WithTimeout(
+        context.Background(),
+        30 * time.Second,
+    ),
+)
+```
