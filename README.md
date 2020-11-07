@@ -16,7 +16,7 @@ This library provides a friendlier way to handle SSH requests than with the buil
 point you will need to create and run the SSH server:
 
 ```go
-//Create the server
+// Create the server. See description below for parameters.
 server, err := sshserver.New(
     cfg,
     handler,
@@ -29,6 +29,7 @@ if err != nil {
 
 defer func() {
     // The Run method will run the server and return when the server is shut down.
+    // We are running this in a goroutine so the shutdown below can proceed after a minute.
     if err := server.Run(); err != nil {
         // Handle errors while running the server
     }
@@ -46,7 +47,9 @@ server.Shutdown(
 )
 ```
 
-The `cfg` variable will be a configuration structure as described in [config.go](config.go). The `logger` variable
-needs to be an instance of a logger from [github.com/containerssh/log](https://github.com/containerssh/log).
+The `cfg` variable will be a configuration structure as described in [config.go](config.go).
 
 The `handler` must be an implementation of the [`Handler` interface described in abstract.go](abstract.go).
+
+ The `logger` variable
+needs to be an instance of a logger from [github.com/containerssh/log](https://github.com/containerssh/log).
