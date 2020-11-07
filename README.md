@@ -37,8 +37,8 @@ defer func() {
 
 time.Sleep(60 * time.Second)
 
-// Shut down the server. Pass a context to indicate how long the server should wait for existing connections to finish.
-// This function will return when the server has stopped. 
+// Shut down the server. Pass a context to indicate how long the server should wait
+// for existing connections to finish. This function will return when the server has stopped. 
 server.Shutdown(
     context.WithTimeout(
         context.Background(),
