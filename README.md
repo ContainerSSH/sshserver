@@ -16,7 +16,7 @@ This library provides a friendlier way to handle SSH requests than with the buil
 point you will need to create and run the SSH server:
 
 ```go
-// Create the server. See description below for parameters.
+// Create the server. See the description below for parameters.
 server, err := sshserver.New(
     cfg,
     handler,
