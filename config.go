@@ -1,7 +1,11 @@
 package sshserver
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -9,7 +13,67 @@ import (
 // Config is the base configuration structure of the SSH server.
 type Config struct {
 	// Listen is the listen address for the SSH server
-	Listen string
+	Listen string `json:"listen" yaml:"listen" default:"0.0.0.0:2222"`
+	// ServerVersion is the version sent to the client.
+	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"ContainerSSH"`
+	// Ciphers are the ciphers offered to the client.
+	Ciphers []Cipher `json:"ciphers" yaml:"ciphers" default:"[\"chacha20-poly1305@openssh.com\",\"aes256-gcm@openssh.com\",\"aes128-gcm@openssh.com\",\"aes256-ctr\",\"aes192-ctr\",\"aes128-ctr\"]" comment:"Cipher suites to use"`
+	// KexAlgorithms are the key exchange algorithms offered to the client.
+	KexAlgorithms []Kex `json:"kex" yaml:"kex" default:"[\"curve25519-sha256@libssh.org\",\"ecdh-sha2-nistp521\",\"ecdh-sha2-nistp384\",\"ecdh-sha2-nistp256\"]" comment:"Key exchange algorithms to use"`
+	// MACs are the MAC algorithms offered to the client.
+	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\",\"hmac-sha1\",\"hmac-sha1-96\"]" comment:"MAC algorithms to use"`
+	// Banner is the banner sent to the client on connecting.
+	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username"`
+	// HostKeys are the host keys either in PEM format, or filenames to load.
+	HostKeys []ssh.Signer `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
+}
+
+//region Unmarshal JSON
+
+// UnmarshalJSON decodes a JSON data structure into the configuration.
+func (cfg Config) UnmarshalJSON(data []byte) error {
+	tmp := &tmpConfig{}
+	if err := json.Unmarshal(data, tmp); err != nil {
+		return err
+	}
+	cfg.Listen = tmp.Listen
+	cfg.ServerVersion = tmp.ServerVersion
+	cfg.Ciphers = tmp.Ciphers
+	cfg.KexAlgorithms = tmp.KexAlgorithms
+	cfg.MACs = tmp.MACs
+	cfg.Banner = tmp.Banner
+
+	var hostKeys []ssh.Signer
+	for _, hostKey := range tmp.HostKeys {
+		if strings.TrimSpace(hostKey)[:5] != "-----" {
+			//Load file
+			fh, err := os.Open(hostKey)
+			if err != nil {
+				return fmt.Errorf("failed to load host key %s (%w)", hostKey, err)
+			}
+			hostKeyData, err := ioutil.ReadAll(fh)
+			if err != nil {
+				_ = fh.Close()
+				return fmt.Errorf("failed to load host key %s (%w)", hostKey, err)
+			}
+			if err = fh.Close(); err != nil {
+				return fmt.Errorf("failed to close host key file %s (%w)", hostKey, err)
+			}
+			hostKey = string(hostKeyData)
+		}
+		private, err := ssh.ParsePrivateKey([]byte(hostKey))
+		if err != nil {
+			return fmt.Errorf("failed to parse host key (%w)", err)
+		}
+		hostKeys = append(hostKeys, private)
+	}
+	cfg.HostKeys = hostKeys
+	return nil
+}
+
+type tmpConfig struct {
+	// Listen is the listen address for the SSH server
+	Listen string `json:"listen" yaml:"listen" default:"0.0.0.0:2222"`
 	// ServerVersion is the version sent to the client.
 	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"ContainerSSH"`
 	// Ciphers are the ciphers offered to the client.
@@ -23,6 +87,8 @@ type Config struct {
 	// HostKeys are the host keys either in PEM format, or filenames to load.
 	HostKeys []string `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
 }
+
+//endregion
 
 //region Constants
 
@@ -110,6 +176,7 @@ func (cfg Config) processAndValidate() error {
 		cfg.validateCiphers,
 		cfg.validateKexAlgorithms,
 		cfg.validateMACs,
+		cfg.validateHostKeys,
 	}
 
 	for _, validator := range validators {
@@ -158,11 +225,11 @@ func (cfg Config) validateMACs() error {
 	return cfg.findUnsupported("MAC algorithm", cfg.MACs, supportedMACs)
 }
 
-func (cfg Config) validateHostKeys(hostKeys []ssh.Signer) error {
-	if len(hostKeys) == 0 {
+func (cfg Config) validateHostKeys() error {
+	if len(cfg.HostKeys) == 0 {
 		return fmt.Errorf("no host keys supplied")
 	}
-	for index, hostKey := range hostKeys {
+	for index, hostKey := range cfg.HostKeys {
 		if hostKey == nil {
 			return fmt.Errorf("host key %d is nil (probably not loaded correctly)", index)
 		}
