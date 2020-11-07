@@ -6,6 +6,26 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// Config is the base configuration structure of the SSH server.
+type Config struct {
+	// Listen is the listen address for the SSH server
+	Listen string
+	// ServerVersion is the version sent to the client.
+	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"ContainerSSH"`
+	// Ciphers are the ciphers offered to the client.
+	Ciphers []Cipher `json:"ciphers" yaml:"ciphers" default:"[\"chacha20-poly1305@openssh.com\",\"aes256-gcm@openssh.com\",\"aes128-gcm@openssh.com\",\"aes256-ctr\",\"aes192-ctr\",\"aes128-ctr\"]" comment:"Cipher suites to use"`
+	// KexAlgorithms are the key exchange algorithms offered to the client.
+	KexAlgorithms []Kex `json:"kex" yaml:"kex" default:"[\"curve25519-sha256@libssh.org\",\"ecdh-sha2-nistp521\",\"ecdh-sha2-nistp384\",\"ecdh-sha2-nistp256\"]" comment:"Key exchange algorithms to use"`
+	// MACs are the MAC algorithms offered to the client.
+	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\",\"hmac-sha1\",\"hmac-sha1-96\"]" comment:"MAC algorithms to use"`
+	// Banner is the banner sent to the client on connecting.
+	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username"`
+	// HostKeys are the host keys either in PEM format, or filenames to load.
+	HostKeys []string `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
+}
+
+//region Constants
+
 // Cipher is the SSH cipher
 type Cipher string
 
@@ -64,39 +84,9 @@ const (
 	HostKeyAlgoSSHED25519               HostKeyAlgo = "ssh-ed25519"
 )
 
-// Config is the base configuration structure of the SSH server.
-type Config struct {
-	// Listen is the listen address for the SSH server
-	Listen string
-	// ServerVersion is the version sent to the client.
-	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"ContainerSSH"`
-	// Ciphers are the ciphers offered to the client.
-	Ciphers []Cipher `json:"ciphers" yaml:"ciphers" default:"[\"chacha20-poly1305@openssh.com\",\"aes256-gcm@openssh.com\",\"aes128-gcm@openssh.com\",\"aes256-ctr\",\"aes192-ctr\",\"aes128-ctr\"]" comment:"Cipher suites to use"`
-	// KexAlgorithms are the key exchange algorithms offered to the client.
-	KexAlgorithms []Kex `json:"kex" yaml:"kex" default:"[\"curve25519-sha256@libssh.org\",\"ecdh-sha2-nistp521\",\"ecdh-sha2-nistp384\",\"ecdh-sha2-nistp256\"]" comment:"Key exchange algorithms to use"`
-	// MACs are the MAC algorithms offered to the client.
-	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\",\"hmac-sha1\",\"hmac-sha1-96\"]" comment:"MAC algorithms to use"`
-	// Banner is the banner sent to the client on connecting.
-	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username"`
-	// HostKeys are the host keys either in PEM format, or filenames to load.
-	HostKeys []string `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
-}
+//endregion
 
-func (cfg Config) processAndValidate() error {
-	validators := []func() error{
-		cfg.validateCiphers,
-		cfg.validateKexAlgorithms,
-		cfg.validateMACs,
-	}
-
-	for _, validator := range validators {
-		err := validator()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
+//region Validation
 
 var supportedCiphers = []Cipher{
 	CipherChaCha20Poly1305, CipherAES256GCM, CipherAES128GCM, CipherAES256CTE, CipherAES192CTR, CipherAES128CTR,
@@ -113,6 +103,22 @@ var supportedHostKeyAlgos = []HostKeyAlgo{
 }
 var supportedMACs = []MAC{
 	MACHMACSHA2256ETM, MACHMACSHA2256, MACHMACSHA196, MACHMACSHA1,
+}
+
+func (cfg Config) processAndValidate() error {
+	validators := []func() error{
+		cfg.validateCiphers,
+		cfg.validateKexAlgorithms,
+		cfg.validateMACs,
+	}
+
+	for _, validator := range validators {
+		err := validator()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (cfg Config) findUnsupported(name string, requestedList interface{}, supportedList interface{}) error {
@@ -172,3 +178,5 @@ func (cfg Config) validateHostKeys(hostKeys []ssh.Signer) error {
 	}
 	return nil
 }
+
+//endregion
