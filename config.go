@@ -27,6 +27,7 @@ const (
 // Kex are the SSH key exchange algorithms
 type Kex string
 
+// Kex are the SSH key exchange algorithms
 const (
 	KexCurve25519SHA256 Kex = "curve25519-sha256@libssh.org"
 	KexECDHSHA2NISTp521 Kex = "ecdh-sha2-nistp521"
@@ -81,7 +82,7 @@ type Config struct {
 	HostKeys []string `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
 }
 
-func (cfg Config) ProcessAndValidate() error {
+func (cfg Config) processAndValidate() error {
 	validators := []func() error{
 		cfg.validateCiphers,
 		cfg.validateKexAlgorithms,

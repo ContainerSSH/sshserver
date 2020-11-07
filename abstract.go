@@ -8,6 +8,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// Handler is the basic handler for SSH connections. It contains several methods to handle startup and operations of the
+//         server
 type Handler interface {
 	// OnReady is called when the server is ready to receive connections. It has an opportunity to return an error to
 	//         abort the startup.
@@ -18,8 +20,8 @@ type Handler interface {
 	//            possible.
 	OnShutdown(shutdownContext context.Context)
 
-	// Connection is called when a new network connection is opened. It must either return a NetworkConnection object or an error.
-	//            In case of an error the network connection is closed.
+	// Connection is called when a new network connection is opened. It must either return a NetworkConnection object or
+	//            an error. In case of an error the network connection is closed.
 	OnNetworkConnection(ip net.Addr) (NetworkConnection, error)
 }
 

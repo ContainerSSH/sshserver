@@ -5,7 +5,7 @@ import (
 )
 
 // Server is the main server for running a server
-type Server interface{
+type Server interface {
 	// Run runs the server synchronously. This function returns when the server has stopped.
 	Run() error
 
