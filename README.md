@@ -45,3 +45,8 @@ server.Shutdown(
     ),
 )
 ```
+
+The `cfg` variable will be a configuration structure as described in [config.go](config.go). The `logger` variable
+needs to be an instance of a logger from [github.com/containerssh/log](https://github.com/containerssh/log).
+
+The `handler` must be an implementation of the [`Handler` interface described in abstract.go](abstract.go).
