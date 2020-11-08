@@ -51,4 +51,15 @@ The `cfg` variable will be a `Config` structure as described in [config.go](conf
 
 The `handler` variable must be an implementation of the [`Handler` interface described in handler.go](handler.go).
 
- The `logger` variable needs to be an instance of the `Logger` interface from [github.com/containerssh/log](https://github.com/containerssh/log).
+The `logger` variable needs to be an instance of the `Logger` interface from [github.com/containerssh/log](https://github.com/containerssh/log).
+
+## Implementing a handler
+
+The handler interface consists of multiple parts:
+
+- The `Handler` is the main handler for the application providing several hooks for events. On new connections the `OnNetworkConnection` method is called, which must return a `NetworkConnectionHandler`
+- The `NetworkConnectionHandler` is a handler for network connections before the SSH handshake is complete. It is called to perform authentication and return an `SSHConnectionHandler` when the authentication is successful.
+- The `SSHConnectionHandler` is responsible for handling an individual SSH connection. Most importantly, it is responsible for providing a `SessionChannelHandler` when a new session channel is requested by the client.
+- The `SessionChannelHandler` is responsible for an individual session channel (single program execution). It provides several hooks for setting up and running the program. Once the program execution is complete the channel is closed. You must, however, keep handling requests (e.g. window size change) during program execution.
+
+A sample implementation can be found in the [test code](impl_test.go) at the bottom of the file.
