@@ -158,13 +158,20 @@ func (s *server) createPubKeyAuthenticator(
 
 func (s *server) createConfiguration(handlerNetworkConnection NetworkConnection) *ssh.ServerConfig {
 	serverConfig := &ssh.ServerConfig{
-		Config:            ssh.Config{},
+		Config: ssh.Config{
+			KeyExchanges: s.cfg.getKex(),
+			Ciphers:      s.cfg.getCiphers(),
+			MACs:         s.cfg.getMACs(),
+		},
 		NoClientAuth:      false,
 		MaxAuthTries:      6,
 		PasswordCallback:  s.createPasswordAuthenticator(handlerNetworkConnection),
 		PublicKeyCallback: s.createPubKeyAuthenticator(handlerNetworkConnection),
 		ServerVersion:     s.cfg.ServerVersion,
 		BannerCallback:    func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
+	}
+	for _, key := range s.cfg.HostKeys {
+		serverConfig.AddHostKey(key)
 	}
 	return serverConfig
 }

@@ -1,12 +1,18 @@
 package sshserver
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
 
+	"github.com/creasty/defaults"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -23,10 +29,74 @@ type Config struct {
 	// MACs are the MAC algorithms offered to the client.
 	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\",\"hmac-sha1\",\"hmac-sha1-96\"]" comment:"MAC algorithms to use"`
 	// Banner is the banner sent to the client on connecting.
-	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username"`
+	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username" default:""`
 	// HostKeys are the host keys either in PEM format, or filenames to load.
 	HostKeys []ssh.Signer `json:"hostkeys" yaml:"hostkeys" comment:"Host keys in PEM format or files to load PEM host keys from."`
 }
+
+// GenerateHostKey generates a random host key and adds it to Config
+func (cfg *Config) GenerateHostKey() error {
+	reader := rand.Reader
+	bitSize := 2048
+	key, err := rsa.GenerateKey(reader, bitSize)
+	if err != nil {
+		return err
+	}
+	var privateKey = &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}
+	var hostKeyBuffer bytes.Buffer
+	err = pem.Encode(&hostKeyBuffer, privateKey)
+	if err != nil {
+		return err
+	}
+
+	private, err := ssh.ParsePrivateKey(hostKeyBuffer.Bytes())
+	if err != nil {
+		return err
+	}
+	cfg.HostKeys = append(cfg.HostKeys, private)
+	return nil
+}
+
+// DefaultConfig returns the config structure with the default settings. Only the HostKeys option will need to be
+//               filled.
+func DefaultConfig() Config {
+	cfg := Config{}
+	if err := defaults.Set(&cfg); err != nil {
+		panic(err)
+	}
+	return cfg
+}
+
+//region Getters
+
+func (cfg *Config) getKex() []string {
+	kex := make([]string, len(cfg.KexAlgorithms))
+	for i, k := range cfg.KexAlgorithms {
+		kex[i] = k.String()
+	}
+	return kex
+}
+
+func (cfg *Config) getMACs() []string {
+	macs := make([]string, len(cfg.MACs))
+	for i, v := range cfg.MACs {
+		macs[i] = v.String()
+	}
+	return macs
+}
+
+func (cfg *Config) getCiphers() []string {
+	ciphers := make([]string, len(cfg.Ciphers))
+	for i, v := range cfg.Ciphers {
+		ciphers[i] = v.String()
+	}
+	return ciphers
+}
+
+//endregion
 
 //region Unmarshal JSON
 
@@ -92,6 +162,10 @@ type tmpConfig struct {
 
 //region Constants
 
+type stringer interface {
+	String() string
+}
+
 // Cipher is the SSH cipher
 type Cipher string
 
@@ -110,6 +184,11 @@ const (
 	CipherTripleDESCBCID   Cipher = "tripledescbcID"
 )
 
+// String creates a string representation.
+func (c Cipher) String() string {
+	return string(c)
+}
+
 // Kex are the SSH key exchange algorithms
 type Kex string
 
@@ -123,6 +202,11 @@ const (
 	KexDHGroup1SHA1     Kex = "diffie-hellman-group1-sha1"
 )
 
+// String creates a string representation.
+func (k Kex) String() string {
+	return string(k)
+}
+
 // MAC are the SSH mac algorithms.
 type MAC string
 
@@ -133,6 +217,11 @@ const (
 	MACHMACSHA1       MAC = "hmac-sha1"
 	MACHMACSHA196     MAC = "hmac-sha1-96"
 )
+
+// String creates a string representation.
+func (m MAC) String() string {
+	return string(m)
+}
 
 // HostKeyAlgo are supported host key algorithms.
 type HostKeyAlgo string
@@ -150,28 +239,17 @@ const (
 	HostKeyAlgoSSHED25519               HostKeyAlgo = "ssh-ed25519"
 )
 
+// String creates a string representation.
+func (h HostKeyAlgo) String() string {
+	return string(h)
+}
+
 //endregion
 
 //region Validation
 
-var supportedCiphers = []Cipher{
-	CipherChaCha20Poly1305, CipherAES256GCM, CipherAES128GCM, CipherAES256CTE, CipherAES192CTR, CipherAES128CTR,
-	CipherAES128CBC, CipherArcFour256, CipherArcFour128, CipherArcFour, CipherTripleDESCBCID,
-}
-var supportedKexAlgos = []Kex{
-	KexCurve25519SHA256, KexECDHSHA2Nistp256, KexECDHSHA2Nistp384, KexECDHSHA2NISTp521,
-	KexDHGroup1SHA1, KexDHGroup14SHA1,
-}
-var supportedHostKeyAlgos = []HostKeyAlgo{
-	HostKeyAlgoSSHRSACertv01, HostKeyAlgoSSHDSSCertv01, HostKeyAlgoECDSASHA2NISTp256Certv01,
-	HostKeyAlgoECDSASHA2NISTp384Certv01, HostKeyAlgoECDSASHA2NISTp521Certv01, HostKeyAlgoSSHED25519Certv01,
-	HostKeyAlgoSSHRSA, HostKeyAlgoSSHDSS, HostKeyAlgoSSHED25519,
-}
-var supportedMACs = []MAC{
-	MACHMACSHA2256ETM, MACHMACSHA2256, MACHMACSHA196, MACHMACSHA1,
-}
-
-func (cfg Config) processAndValidate() error {
+// Validate validates the configuration and returns an error if invalid.
+func (cfg Config) Validate() error {
 	validators := []func() error{
 		cfg.validateCiphers,
 		cfg.validateKexAlgorithms,
@@ -188,11 +266,28 @@ func (cfg Config) processAndValidate() error {
 	return nil
 }
 
-func (cfg Config) findUnsupported(name string, requestedList interface{}, supportedList interface{}) error {
-	for _, requestedItem := range requestedList.([]string) {
+var supportedCiphers = []stringer{
+	CipherChaCha20Poly1305, CipherAES256GCM, CipherAES128GCM, CipherAES256CTE, CipherAES192CTR, CipherAES128CTR,
+	CipherAES128CBC, CipherArcFour256, CipherArcFour128, CipherArcFour, CipherTripleDESCBCID,
+}
+var supportedKexAlgos = []stringer{
+	KexCurve25519SHA256, KexECDHSHA2Nistp256, KexECDHSHA2Nistp384, KexECDHSHA2NISTp521,
+	KexDHGroup1SHA1, KexDHGroup14SHA1,
+}
+var supportedHostKeyAlgos = []stringer{
+	HostKeyAlgoSSHRSACertv01, HostKeyAlgoSSHDSSCertv01, HostKeyAlgoECDSASHA2NISTp256Certv01,
+	HostKeyAlgoECDSASHA2NISTp384Certv01, HostKeyAlgoECDSASHA2NISTp521Certv01, HostKeyAlgoSSHED25519Certv01,
+	HostKeyAlgoSSHRSA, HostKeyAlgoSSHDSS, HostKeyAlgoSSHED25519,
+}
+var supportedMACs = []stringer{
+	MACHMACSHA2256ETM, MACHMACSHA2256, MACHMACSHA196, MACHMACSHA1,
+}
+
+func (cfg Config) findUnsupported(name string, requestedList []stringer, supportedList []stringer) error {
+	for _, requestedItem := range requestedList {
 		found := false
-		for _, supportedItem := range supportedList.([]string) {
-			if supportedItem == requestedItem {
+		for _, supportedItem := range supportedList {
+			if supportedItem.String() == requestedItem.String() {
 				found = true
 				break
 			}
@@ -208,21 +303,39 @@ func (cfg Config) validateCiphers() error {
 	if len(cfg.Ciphers) == 0 {
 		return nil
 	}
-	return cfg.findUnsupported("cipher", cfg.Ciphers, supportedCiphers)
+
+	cipherList := make([]stringer, len(cfg.Ciphers))
+	for i, cipher := range cfg.Ciphers {
+		cipherList[i] = cipher
+	}
+
+	return cfg.findUnsupported("cipher", cipherList, supportedCiphers)
 }
 
 func (cfg Config) validateKexAlgorithms() error {
 	if len(cfg.KexAlgorithms) == 0 {
 		return nil
 	}
-	return cfg.findUnsupported("key exchange algorithm", cfg.KexAlgorithms, supportedKexAlgos)
+
+	kexList := make([]stringer, len(cfg.KexAlgorithms))
+	for i, cipher := range cfg.KexAlgorithms {
+		kexList[i] = cipher
+	}
+
+	return cfg.findUnsupported("key exchange algorithm", kexList, supportedKexAlgos)
 }
 
 func (cfg Config) validateMACs() error {
 	if len(cfg.MACs) == 0 {
 		return nil
 	}
-	return cfg.findUnsupported("MAC algorithm", cfg.MACs, supportedMACs)
+
+	macList := make([]stringer, len(cfg.MACs))
+	for i, cipher := range cfg.MACs {
+		macList[i] = cipher
+	}
+
+	return cfg.findUnsupported("MAC algorithm", macList, supportedMACs)
 }
 
 func (cfg Config) validateHostKeys() error {
@@ -235,7 +348,7 @@ func (cfg Config) validateHostKeys() error {
 		}
 		foundHostKeyAlgo := false
 		for _, hostKeyAlgo := range supportedHostKeyAlgos {
-			if hostKey.PublicKey().Type() == string(hostKeyAlgo) {
+			if hostKey.PublicKey().Type() == hostKeyAlgo.String() {
 				foundHostKeyAlgo = true
 			}
 		}
