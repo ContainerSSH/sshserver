@@ -33,13 +33,18 @@ func (s *server) Shutdown(shutdownContext context.Context) {
 		if err := s.listenSocket.Close(); err != nil {
 			s.logger.Errorf("failed to close listen socket (%v)", err)
 		}
+		s.listenSocket = nil
 	}
 	s.cancelFunc()
 	s.shutdownContext = shutdownContext
 	s.lock.Unlock()
 
-	done := make(chan bool, 1)
+	done := make(chan bool)
 	go func() {
+		if shutdownContext.Done() == nil {
+			<-done
+			return
+		}
 		select {
 		case <-shutdownContext.Done():
 			//The shutdown context has expired and the server hasn't shut down, close existing connections.
@@ -53,12 +58,13 @@ func (s *server) Shutdown(shutdownContext context.Context) {
 					)
 				}
 			}
+			s.clientSockets = map[*ssh.ServerConn]bool{}
 			s.lock.Unlock()
 		case <-done:
 		}
 	}()
 	s.wg.Wait()
-	<-done
+	done <- true
 }
 
 func (s *server) Run() error {
@@ -72,6 +78,7 @@ func (s *server) Run() error {
 		s.shutdownContext = nil
 	}
 	s.lock.Unlock()
+
 	if alreadyRunning {
 		return fmt.Errorf("SSH server is already running")
 	}
@@ -82,13 +89,6 @@ func (s *server) Run() error {
 		return fmt.Errorf("failed to start SSH server on %s (%w)", s.cfg.Listen, err)
 	}
 	s.listenSocket = netListener
-	defer func() {
-		if s.listenSocket != nil {
-			if err := netListener.Close(); err != nil {
-				s.logger.Warningf("failed to close listen socket (%v)", err)
-			}
-		}
-	}()
 	if err := s.handler.OnReady(); err != nil {
 		return err
 	}
@@ -113,21 +113,17 @@ func (s *server) Run() error {
 }
 
 func (s *server) createPasswordAuthenticator(
-	handlerNetworkConnection NetworkConnection,
+	handlerNetworkConnection NetworkConnectionHandler,
 ) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 	return func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), password)
-		if err != nil {
-			s.logger.Warningf("error while trying to authenticate user %s (%v)", conn.User(), err)
-			return nil, fmt.Errorf("authentication currently unavailable")
-		}
+		authResponse, err := handlerNetworkConnection.OnAuthPassword(conn.User(), password)
 		switch authResponse {
 		case AuthResponseSuccess:
 			return &ssh.Permissions{}, nil
 		case AuthResponseFailure:
 			return nil, fmt.Errorf("authentication failed")
 		case AuthResponseUnavailable:
-			s.logger.Warningf("authentication backend currently unavailable.")
+			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
 			return nil, fmt.Errorf("authentication currently unavailable")
 		}
 		return nil, fmt.Errorf("authentication currently unavailable")
@@ -135,28 +131,24 @@ func (s *server) createPasswordAuthenticator(
 }
 
 func (s *server) createPubKeyAuthenticator(
-	handlerNetworkConnection NetworkConnection,
+	handlerNetworkConnection NetworkConnectionHandler,
 ) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
 	return func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
 		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), pubKey.Marshal())
-		if err != nil {
-			s.logger.Warningf("error while trying to authenticate user %s (%v)", conn.User(), err)
-			return nil, fmt.Errorf("authentication currently unavailable")
-		}
 		switch authResponse {
 		case AuthResponseSuccess:
 			return &ssh.Permissions{}, nil
 		case AuthResponseFailure:
 			return nil, fmt.Errorf("authentication failed")
 		case AuthResponseUnavailable:
-			s.logger.Warningf("authentication backend currently unavailable.")
+			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
 			return nil, fmt.Errorf("authentication currently unavailable")
 		}
 		return nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
-func (s *server) createConfiguration(handlerNetworkConnection NetworkConnection) *ssh.ServerConfig {
+func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionHandler) *ssh.ServerConfig {
 	serverConfig := &ssh.ServerConfig{
 		Config: ssh.Config{
 			KeyExchanges: s.cfg.getKex(),
@@ -206,16 +198,14 @@ func (s *server) handleConnection(conn net.Conn) {
 	handlerSSHConnection, failureReason := handlerNetworkConnection.OnHandshakeSuccess()
 	if failureReason != nil {
 		s.logger.Debugf("handshake success handler returned with error (%v)", err)
-		if err := sshConn.Close(); err != nil {
-			s.logger.Debugf("failed to close SSH connection to %s (%v)", sshConn.RemoteAddr().String(), err)
-			return
-		}
+		// No need to close connection, already closed.
+		return
 	}
 	go s.handleChannels(channels, handlerSSHConnection)
 	go s.handleGlobalRequests(globalRequests, handlerSSHConnection)
 }
 
-func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection SSHConnection) {
+func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection SSHConnectionHandler) {
 	for {
 		request, ok := <-requests
 		if !ok {
@@ -230,7 +220,7 @@ func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection S
 	}
 }
 
-func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHConnection) {
+func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHConnectionHandler) {
 	for {
 		newChannel, ok := <-channels
 		if !ok {
@@ -299,17 +289,7 @@ const (
 	requestTypeSignal    requestType = "signal"
 )
 
-var requestPayloadFormats = map[requestType]interface{}{
-	requestTypeEnv:       envRequestPayload{},
-	requestTypePty:       ptyRequestPayload{},
-	requestTypeShell:     shellRequestPayload{},
-	requestTypeExec:      execRequestPayload{},
-	requestTypeSubsystem: subsystemRequestPayload{},
-	requestTypeWindow:    windowRequestPayload{},
-	requestTypeSignal:    signalRequestPayload{},
-}
-
-func (s *server) handleSessionChannel(newChannel ssh.NewChannel, connection SSHConnection) {
+func (s *server) handleSessionChannel(newChannel ssh.NewChannel, connection SSHConnectionHandler) {
 	handlerChannel, rejection := connection.OnSessionChannel(newChannel.ExtraData())
 	if rejection != nil {
 		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
@@ -331,7 +311,59 @@ func (s *server) handleSessionChannel(newChannel ssh.NewChannel, connection SSHC
 	}
 }
 
-func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannel) {
+func (s *server) unmarshalEnv(request *ssh.Request) (payload envRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalPty(request *ssh.Request) (payload ptyRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalShell(request *ssh.Request) (payload shellRequestPayload, err error) {
+	if len(request.Payload) != 0 {
+		err = ssh.Unmarshal(request.Payload, &payload)
+	}
+	return payload, err
+}
+
+func (s *server) unmarshalExec(request *ssh.Request) (payload execRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalSubsystem(request *ssh.Request) (payload subsystemRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalWindow(request *ssh.Request) (payload windowRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalSignal(request *ssh.Request) (payload signalRequestPayload, err error) {
+	return payload, ssh.Unmarshal(request.Payload, &payload)
+}
+
+func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, err error) {
+	switch requestType(request.Type) {
+	case requestTypeEnv:
+		return s.unmarshalEnv(request)
+	case requestTypePty:
+		return s.unmarshalPty(request)
+	case requestTypeShell:
+		return s.unmarshalShell(request)
+	case requestTypeExec:
+		return s.unmarshalExec(request)
+	case requestTypeSubsystem:
+		return s.unmarshalSubsystem(request)
+	case requestTypeWindow:
+		return s.unmarshalWindow(request)
+	case requestTypeSignal:
+		return s.unmarshalSignal(request)
+	default:
+		return nil, nil
+	}
+}
+
+func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
 			if err := request.Reply(
@@ -351,14 +383,17 @@ func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Chann
 			})); err != nil {
 			s.logger.Debugf("failed to send exit status to client (%v)", err)
 		}
+		if err := sshChannel.Close(); err != nil {
+			s.logger.Debugf("failed to close SSH channel (%v)", err)
+		}
 	}
-	payload, ok := requestPayloadFormats[requestType(request.Type)]
-	if !ok {
+	payload, err := s.unmarshalPayload(request)
+	if payload == nil {
 		sessionChannel.OnUnsupportedChannelRequest(request.Type, request.Payload)
 		reply(false, fmt.Sprintf("unsupported request type: %s", request.Type), nil)
 		return
 	}
-	if err := ssh.Unmarshal(request.Payload, &payload); err != nil {
+	if err != nil {
 		s.logger.Debugf("failed to unmarshal %s request payload %v (%v)", request.Type, request.Payload, err)
 		sessionChannel.OnFailedDecodeChannelRequest(request.Type, request.Payload, err)
 		reply(false, "failed to unmarshal payload", nil)
@@ -381,7 +416,7 @@ func (s *server) handleDecodedChannelRequest(
 	requestType requestType,
 	payload interface{},
 	channel ssh.Channel,
-	sessionChannel SessionChannel,
+	sessionChannel SessionChannelHandler,
 	onExit func(exitCode uint32),
 ) error {
 	switch requestType {

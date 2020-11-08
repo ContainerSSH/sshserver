@@ -20,9 +20,9 @@ type Handler interface {
 	//            possible.
 	OnShutdown(shutdownContext context.Context)
 
-	// Connection is called when a new network connection is opened. It must either return a NetworkConnection object or
+	// Connection is called when a new network connection is opened. It must either return a NetworkConnectionHandler object or
 	//            an error. In case of an error the network connection is closed.
-	OnNetworkConnection(ip net.Addr) (NetworkConnection, error)
+	OnNetworkConnection(ip net.Addr) (NetworkConnectionHandler, error)
 }
 
 // AuthResponse indicates the various response states for the authentication process.
@@ -40,8 +40,8 @@ const (
 	AuthResponseUnavailable AuthResponse = 3
 )
 
-// NetworkConnection is an object that is used to represent the underlying network connection and the SSH handshake.
-type NetworkConnection interface {
+// NetworkConnectionHandler is an object that is used to represent the underlying network connection and the SSH handshake.
+type NetworkConnectionHandler interface {
 	// OnAuthPassword is called when a user attempts a password authentication. The implementation must always supply
 	//                AuthResponse and may supply error as a reason description.
 	OnAuthPassword(username string, password []byte) (response AuthResponse, reason error)
@@ -50,14 +50,15 @@ type NetworkConnection interface {
 	//                AuthResponse and may supply error as a reason description.
 	OnAuthPubKey(username string, pubKey []byte) (response AuthResponse, reason error)
 
-	// OnHandshakeFailed is called when the SSH handshake failed. After this method is the connection will be closed and
-	//                   the OnDisconnect method will be called.
+	// OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication
+	//                   failure. After this method is the connection will be closed and the OnDisconnect method will be
+	//                   called.
 	OnHandshakeFailed(reason error)
 
 	// OnHandshakeSuccess is called when the SSH handshake was successful. It returns connection to process
 	//                    requests, or failureReason to indicate that a backend error has happened. In this case, the
 	//                    connection will be closed and OnDisconnect will be called.
-	OnHandshakeSuccess() (connection SSHConnection, failureReason error)
+	OnHandshakeSuccess() (connection SSHConnectionHandler, failureReason error)
 
 	// OnDisconnect is called when the network connection is closed.
 	OnDisconnect()
@@ -73,8 +74,8 @@ type ChannelRejection interface {
 	Reason() ssh.RejectionReason
 }
 
-// SSHConnection represents an established SSH connection that is ready to receive requests.
-type SSHConnection interface {
+// SSHConnectionHandler represents an established SSH connection that is ready to receive requests.
+type SSHConnectionHandler interface {
 	// OnUnsupportedGlobalRequest captures all global SSH requests and gives the implementation an opportunity to log
 	//                            the request.
 	OnUnsupportedGlobalRequest(requestType string, payload []byte)
@@ -86,11 +87,11 @@ type SSHConnection interface {
 	// OnSessionChannel is called when a channel of the session type is requested. The implementer must either return
 	//                  the channel result if the channel was successful, or failureReason to state why the channel
 	//                  should be rejected.
-	OnSessionChannel(extraData []byte) (channel SessionChannel, failureReason ChannelRejection)
+	OnSessionChannel(extraData []byte) (channel SessionChannelHandler, failureReason ChannelRejection)
 }
 
-// SessionChannel is a channel of the "session" type used for interactive and non-interactive sessions
-type SessionChannel interface {
+// SessionChannelHandler is a channel of the "session" type used for interactive and non-interactive sessions
+type SessionChannelHandler interface {
 	// OnUnsupportedChannelRequest captures channel requests of unsupported types.
 	OnUnsupportedChannelRequest(
 		requestType string,

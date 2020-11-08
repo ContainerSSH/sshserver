@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/creasty/defaults"
@@ -21,7 +22,10 @@ type Config struct {
 	// Listen is the listen address for the SSH server
 	Listen string `json:"listen" yaml:"listen" default:"0.0.0.0:2222"`
 	// ServerVersion is the version sent to the client.
-	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"ContainerSSH"`
+	//               Must be in the format of "SSH-protoversion-softwareversion SPACE comments".
+	//               See https://tools.ietf.org/html/rfc4253#page-4 section 4.2. Protocol Version Exchange
+	//               The trailing CR and LF characters should NOT be added to this string.
+	ServerVersion string `json:"serverVersion" yaml:"serverVersion" default:"SSH-2.0-ContainerSSH"`
 	// Ciphers are the ciphers offered to the client.
 	Ciphers []Cipher `json:"ciphers" yaml:"ciphers" default:"[\"chacha20-poly1305@openssh.com\",\"aes256-gcm@openssh.com\",\"aes128-gcm@openssh.com\",\"aes256-ctr\",\"aes192-ctr\",\"aes128-ctr\"]" comment:"Cipher suites to use"`
 	// KexAlgorithms are the key exchange algorithms offered to the client.
@@ -251,6 +255,7 @@ func (h HostKeyAlgo) String() string {
 // Validate validates the configuration and returns an error if invalid.
 func (cfg Config) Validate() error {
 	validators := []func() error{
+		cfg.validateServerVersion,
 		cfg.validateCiphers,
 		cfg.validateKexAlgorithms,
 		cfg.validateMACs,
@@ -295,6 +300,15 @@ func (cfg Config) findUnsupported(name string, requestedList []stringer, support
 		if !found {
 			return fmt.Errorf("ssh: unsupported %s %s for server", name, requestedItem)
 		}
+	}
+	return nil
+}
+
+var serverVersionRegexp = regexp.MustCompile(`^SSH-2.0-[a-zA-Z0-9]+(| [a-zA-Z0-9- _.]+)$`)
+
+func (cfg Config) validateServerVersion() error {
+	if !serverVersionRegexp.MatchString(cfg.ServerVersion) {
+		return fmt.Errorf("invalid server version string (%s), see https://tools.ietf.org/html/rfc4253#page-4 section 4.2. for details", cfg.ServerVersion)
 	}
 	return nil
 }
