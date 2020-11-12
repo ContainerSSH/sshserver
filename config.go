@@ -105,7 +105,7 @@ func (cfg *Config) getCiphers() []string {
 //region Unmarshal JSON
 
 // UnmarshalJSON decodes a JSON data structure into the configuration.
-func (cfg Config) UnmarshalJSON(data []byte) error {
+func (cfg *Config) UnmarshalJSON(data []byte) error {
 	tmp := &tmpConfig{}
 	if err := json.Unmarshal(data, tmp); err != nil {
 		return err
