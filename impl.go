@@ -440,60 +440,88 @@ func (s *server) handleDecodedChannelRequest(
 ) error {
 	switch requestType {
 	case requestTypeEnv:
-		return sessionChannel.OnEnvRequest(
-			requestID,
-			payload.(envRequestPayload).name,
-			payload.(envRequestPayload).value,
-		)
+		return s.onEnvRequest(requestID, sessionChannel, payload)
 	case requestTypePty:
-		return sessionChannel.OnPtyRequest(
-			requestID,
-			payload.(ptyRequestPayload).term,
-			payload.(ptyRequestPayload).columns,
-			payload.(ptyRequestPayload).rows,
-			payload.(ptyRequestPayload).width,
-			payload.(ptyRequestPayload).height,
-			payload.(ptyRequestPayload).modelist,
-		)
+		return s.onPtyRequest(requestID, sessionChannel, payload)
 	case requestTypeShell:
-		return sessionChannel.OnShell(
-			requestID,
-			channel,
-			channel,
-			channel.Stderr(),
-			onExit,
-		)
+		return s.onShell(requestID, sessionChannel, channel, onExit)
 	case requestTypeExec:
-		return sessionChannel.OnExecRequest(
-			requestID,
-			payload.(execRequestPayload).exec,
-			channel,
-			channel,
-			channel.Stderr(),
-			onExit,
-		)
+		return s.onExec(requestID, sessionChannel, payload, channel, onExit)
 	case requestTypeSubsystem:
-		return sessionChannel.OnSubsystem(
-			requestID,
-			payload.(subsystemRequestPayload).subsystem,
-			channel,
-			channel,
-			channel.Stderr(),
-			onExit,
-		)
+		return s.onSubsystem(requestID, sessionChannel, payload, channel, onExit)
 	case requestTypeWindow:
-		return sessionChannel.OnWindow(
-			requestID,
-			payload.(windowRequestPayload).columns,
-			payload.(windowRequestPayload).rows,
-			payload.(windowRequestPayload).width,
-			payload.(windowRequestPayload).height,
-		)
+		return s.onChannel(requestID, sessionChannel, payload)
 	case requestTypeSignal:
-		return sessionChannel.OnSignal(
-			requestID,
-			payload.(signalRequestPayload).signal,
-		)
+		return s.onSignal(requestID, sessionChannel, payload)
 	}
 	return nil
+}
+
+func (s *server) onEnvRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+	return sessionChannel.OnEnvRequest(
+		requestID,
+		payload.(envRequestPayload).name,
+		payload.(envRequestPayload).value,
+	)
+}
+
+func (s *server) onPtyRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+	return sessionChannel.OnPtyRequest(
+		requestID,
+		payload.(ptyRequestPayload).term,
+		payload.(ptyRequestPayload).columns,
+		payload.(ptyRequestPayload).rows,
+		payload.(ptyRequestPayload).width,
+		payload.(ptyRequestPayload).height,
+		payload.(ptyRequestPayload).modelist,
+	)
+}
+
+func (s *server) onShell(requestID uint64, sessionChannel SessionChannelHandler, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+	return sessionChannel.OnShell(
+		requestID,
+		channel,
+		channel,
+		channel.Stderr(),
+		onExit,
+	)
+}
+
+func (s *server) onExec(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+	return sessionChannel.OnExecRequest(
+		requestID,
+		payload.(execRequestPayload).exec,
+		channel,
+		channel,
+		channel.Stderr(),
+		onExit,
+	)
+}
+
+func (s *server) onSignal(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+	return sessionChannel.OnSignal(
+		requestID,
+		payload.(signalRequestPayload).signal,
+	)
+}
+
+func (s *server) onSubsystem(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+	return sessionChannel.OnSubsystem(
+		requestID,
+		payload.(subsystemRequestPayload).subsystem,
+		channel,
+		channel,
+		channel.Stderr(),
+		onExit,
+	)
+}
+
+func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+	return sessionChannel.OnWindow(
+		requestID,
+		payload.(windowRequestPayload).columns,
+		payload.(windowRequestPayload).rows,
+		payload.(windowRequestPayload).width,
+		payload.(windowRequestPayload).height,
+	)
 }
