@@ -20,9 +20,12 @@ type Handler interface {
 	//            possible.
 	OnShutdown(shutdownContext context.Context)
 
-	// Connection is called when a new network connection is opened. It must either return a NetworkConnectionHandler object or
-	//            an error. In case of an error the network connection is closed.
-	OnNetworkConnection(ip net.Addr) (NetworkConnectionHandler, error)
+	// OnNetworkConnection is called when a new network connection is opened. It must either return a
+	// NetworkConnectionHandler object or an error. In case of an error the network connection is closed.
+	//
+	// The ip parameter provides the IP address of the connecting user. The connectionID parameter provides an opaque
+	// binary identifier for the connection that can be used to track the connection across multiple subsystems.
+	OnNetworkConnection(ip *net.TCPAddr, connectionID []byte) (NetworkConnectionHandler, error)
 }
 
 // AuthResponse indicates the various response states for the authentication process.

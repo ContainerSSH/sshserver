@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/containerssh/log"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -169,17 +170,24 @@ func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionH
 }
 
 func (s *server) handleConnection(conn net.Conn) {
-	handlerNetworkConnection, err := s.handler.OnNetworkConnection(conn.RemoteAddr())
+	addr := conn.RemoteAddr().(*net.TCPAddr)
+	connectionID, err := uuid.New().MarshalBinary()
+	if err != nil {
+		s.logger.Warningf("failed to generate unique connection ID for %s (%w)", addr.IP.String(), err)
+		_ = conn.Close()
+		return
+	}
+	handlerNetworkConnection, err := s.handler.OnNetworkConnection(addr, connectionID)
 	if err != nil {
 		s.logger.Infoe(err)
 		_ = conn.Close()
 		return
 	}
-	s.logger.Debugf("client connected: %s", conn.RemoteAddr().String())
+	s.logger.Debugf("client connected: %s", addr.IP.String())
 
 	sshConn, channels, globalRequests, err := ssh.NewServerConn(conn, s.createConfiguration(handlerNetworkConnection))
 	if err != nil {
-		s.logger.Debugf("SSH handshake failed for %s (%v)", conn.RemoteAddr().String(), err)
+		s.logger.Debugf("SSH handshake failed for %s (%v)", addr.IP.String(), err)
 		handlerNetworkConnection.OnHandshakeFailed(err)
 		handlerNetworkConnection.OnDisconnect()
 		_ = conn.Close()
@@ -191,7 +199,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	s.wg.Add(1)
 	go func() {
 		_ = sshConn.Wait()
-		s.logger.Debugf("client disconnected: %s", conn.RemoteAddr().String())
+		s.logger.Debugf("client disconnected: %s", addr.IP.String())
 		handlerNetworkConnection.OnDisconnect()
 		s.wg.Done()
 	}()
