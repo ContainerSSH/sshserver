@@ -12,16 +12,18 @@ import (
 )
 
 type server struct {
-	cfg             Config
-	logger          log.Logger
-	ctx             context.Context
-	shutdownContext context.Context
-	cancelFunc      context.CancelFunc
-	handler         Handler
-	listenSocket    net.Listener
-	wg              *sync.WaitGroup
-	lock            *sync.Mutex
-	clientSockets   map[*ssh.ServerConn]bool
+	cfg                 Config
+	logger              log.Logger
+	ctx                 context.Context
+	shutdownContext     context.Context
+	cancelFunc          context.CancelFunc
+	handler             Handler
+	listenSocket        net.Listener
+	wg                  *sync.WaitGroup
+	lock                *sync.Mutex
+	clientSockets       map[*ssh.ServerConn]bool
+	nextGlobalRequestID uint64
+	nextChannelID       uint64
 }
 
 func (s *server) Shutdown(shutdownContext context.Context) {
@@ -219,7 +221,9 @@ func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection S
 		if !ok {
 			break
 		}
-		connection.OnUnsupportedGlobalRequest(request.Type, request.Payload)
+		requestID := s.nextGlobalRequestID
+		s.nextGlobalRequestID++
+		connection.OnUnsupportedGlobalRequest(requestID, request.Type, request.Payload)
 		if request.WantReply {
 			if err := request.Reply(false, []byte("request type not supported")); err != nil {
 				s.logger.Debugf("failed to send reply to global request type %s (%v)", request.Type, err)
@@ -234,14 +238,16 @@ func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHCo
 		if !ok {
 			break
 		}
+		channelID := s.nextChannelID
+		s.nextChannelID++
 		if newChannel.ChannelType() != "session" {
-			connection.OnUnsupportedChannel(newChannel.ChannelType(), newChannel.ExtraData())
+			connection.OnUnsupportedChannel(channelID, newChannel.ChannelType(), newChannel.ExtraData())
 			if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil {
 				s.logger.Debugf("failed to send channel rejection for channel type %s", newChannel.ChannelType())
 			}
 			continue
 		}
-		go s.handleSessionChannel(newChannel, connection)
+		go s.handleSessionChannel(channelID, newChannel, connection)
 	}
 }
 
@@ -282,7 +288,7 @@ type windowRequestPayload struct {
 }
 
 type exitStatusPayload struct {
-	exitStatus uint32
+	exitStatus ExitStatus
 }
 
 type requestType string
@@ -297,8 +303,8 @@ const (
 	requestTypeSignal    requestType = "signal"
 )
 
-func (s *server) handleSessionChannel(newChannel ssh.NewChannel, connection SSHConnectionHandler) {
-	handlerChannel, rejection := connection.OnSessionChannel(newChannel.ExtraData())
+func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
+	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData())
 	if rejection != nil {
 		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
 			s.logger.Debugf("failed to send session channel rejection", err)
@@ -310,12 +316,15 @@ func (s *server) handleSessionChannel(newChannel ssh.NewChannel, connection SSHC
 		s.logger.Debugf("failed to accept session channel (%v)", err)
 		return
 	}
+	nextRequestID := uint64(0)
 	for {
 		request, ok := <-requests
 		if !ok {
 			break
 		}
-		go s.handleChannelRequest(request, channel, handlerChannel)
+		requestID := nextRequestID
+		nextRequestID++
+		go s.handleChannelRequest(requestID, request, channel, handlerChannel)
 	}
 }
 
@@ -371,7 +380,7 @@ func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, er
 	}
 }
 
-func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
+func (s *server) handleChannelRequest(requestID uint64, request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
 			if err := request.Reply(
@@ -382,7 +391,7 @@ func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Chann
 			}
 		}
 	}
-	onExit := func(exitCode uint32) {
+	onExit := func(exitCode ExitStatus) {
 		if _, err := sshChannel.SendRequest(
 			"exit-status",
 			false,
@@ -397,17 +406,18 @@ func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Chann
 	}
 	payload, err := s.unmarshalPayload(request)
 	if payload == nil {
-		sessionChannel.OnUnsupportedChannelRequest(request.Type, request.Payload)
+		sessionChannel.OnUnsupportedChannelRequest(requestID, request.Type, request.Payload)
 		reply(false, fmt.Sprintf("unsupported request type: %s", request.Type), nil)
 		return
 	}
 	if err != nil {
 		s.logger.Debugf("failed to unmarshal %s request payload %v (%v)", request.Type, request.Payload, err)
-		sessionChannel.OnFailedDecodeChannelRequest(request.Type, request.Payload, err)
+		sessionChannel.OnFailedDecodeChannelRequest(requestID, request.Type, request.Payload, err)
 		reply(false, "failed to unmarshal payload", nil)
 		return
 	}
 	if err := s.handleDecodedChannelRequest(
+		requestID,
 		requestType(request.Type),
 		payload,
 		sshChannel,
@@ -421,20 +431,23 @@ func (s *server) handleChannelRequest(request *ssh.Request, sshChannel ssh.Chann
 }
 
 func (s *server) handleDecodedChannelRequest(
+	requestID uint64,
 	requestType requestType,
 	payload interface{},
 	channel ssh.Channel,
 	sessionChannel SessionChannelHandler,
-	onExit func(exitCode uint32),
+	onExit func(exitCode ExitStatus),
 ) error {
 	switch requestType {
 	case requestTypeEnv:
 		return sessionChannel.OnEnvRequest(
+			requestID,
 			payload.(envRequestPayload).name,
 			payload.(envRequestPayload).value,
 		)
 	case requestTypePty:
 		return sessionChannel.OnPtyRequest(
+			requestID,
 			payload.(ptyRequestPayload).term,
 			payload.(ptyRequestPayload).columns,
 			payload.(ptyRequestPayload).rows,
@@ -444,6 +457,7 @@ func (s *server) handleDecodedChannelRequest(
 		)
 	case requestTypeShell:
 		return sessionChannel.OnShell(
+			requestID,
 			channel,
 			channel,
 			channel.Stderr(),
@@ -451,6 +465,7 @@ func (s *server) handleDecodedChannelRequest(
 		)
 	case requestTypeExec:
 		return sessionChannel.OnExecRequest(
+			requestID,
 			payload.(execRequestPayload).exec,
 			channel,
 			channel,
@@ -459,6 +474,7 @@ func (s *server) handleDecodedChannelRequest(
 		)
 	case requestTypeSubsystem:
 		return sessionChannel.OnSubsystem(
+			requestID,
 			payload.(subsystemRequestPayload).subsystem,
 			channel,
 			channel,
@@ -467,13 +483,17 @@ func (s *server) handleDecodedChannelRequest(
 		)
 	case requestTypeWindow:
 		return sessionChannel.OnWindow(
+			requestID,
 			payload.(windowRequestPayload).columns,
 			payload.(windowRequestPayload).rows,
 			payload.(windowRequestPayload).width,
 			payload.(windowRequestPayload).height,
 		)
 	case requestTypeSignal:
-		return sessionChannel.OnSignal(payload.(signalRequestPayload).signal)
+		return sessionChannel.OnSignal(
+			requestID,
+			payload.(signalRequestPayload).signal,
+		)
 	}
 	return nil
 }

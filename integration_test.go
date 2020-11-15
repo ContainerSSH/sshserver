@@ -339,15 +339,15 @@ type fullSSHConnectionHandler struct {
 	handler *fullHandler
 }
 
-func (f *fullSSHConnectionHandler) OnUnsupportedGlobalRequest(_ string, _ []byte) {
+func (f *fullSSHConnectionHandler) OnUnsupportedGlobalRequest(_ uint64, _ string, _ []byte) {
 
 }
 
-func (f *fullSSHConnectionHandler) OnUnsupportedChannel(_ string, _ []byte) {
+func (f *fullSSHConnectionHandler) OnUnsupportedChannel(_ uint64,_ string, _ []byte) {
 
 }
 
-func (f *fullSSHConnectionHandler) OnSessionChannel(_ []byte) (channel sshserver.SessionChannelHandler, failureReason sshserver.ChannelRejection) {
+func (f *fullSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte) (channel sshserver.SessionChannelHandler, failureReason sshserver.ChannelRejection) {
 	return &fullSessionChannelHandler{
 		handler: f.handler,
 		env:     map[string]string{},
@@ -363,31 +363,31 @@ type fullSessionChannelHandler struct {
 	env     map[string]string
 }
 
-func (f *fullSessionChannelHandler) OnUnsupportedChannelRequest(_ string, _ []byte) {
+func (f *fullSessionChannelHandler) OnUnsupportedChannelRequest(_ uint64, _ string, _ []byte) {
 }
 
-func (f *fullSessionChannelHandler) OnFailedDecodeChannelRequest(_ string, _ []byte, _ error) {
+func (f *fullSessionChannelHandler) OnFailedDecodeChannelRequest(_ uint64, _ string, _ []byte, _ error) {
 }
 
-func (f *fullSessionChannelHandler) OnEnvRequest(name string, value string) error {
+func (f *fullSessionChannelHandler) OnEnvRequest(_ uint64, name string, value string) error {
 	f.env[name] = value
 	return nil
 }
 
 func (f *fullSessionChannelHandler) OnExecRequest(
-	_ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus uint32),
+	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
 ) error {
 	return fmt.Errorf("this server does not support exec")
 }
 
 func (f *fullSessionChannelHandler) OnPtyRequest(
-	_ string, _ uint32, _ uint32, _ uint32, _ uint32, _ []byte,
+	_ uint64, _ string, _ uint32, _ uint32, _ uint32, _ uint32, _ []byte,
 ) error {
 	return fmt.Errorf("this server does not support PTY")
 }
 
 func (f *fullSessionChannelHandler) OnShell(
-	stdin io.Reader, stdout io.Writer, _ io.Writer, onExit func(exitStatus uint32),
+	_ uint64, stdin io.Reader, stdout io.Writer, _ io.Writer, onExit func(exitStatus sshserver.ExitStatus),
 ) error {
 	go func() {
 		data := make([]byte, 4096)
@@ -409,17 +409,17 @@ func (f *fullSessionChannelHandler) OnShell(
 	return nil
 }
 
-func (f *fullSessionChannelHandler) OnSignal(_ string) error {
+func (f *fullSessionChannelHandler) OnSignal(_ uint64, _ string) error {
 	return nil
 }
 
 func (f *fullSessionChannelHandler) OnSubsystem(
-	_ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus uint32),
+	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
 ) error {
 	return fmt.Errorf("subsystem not supported")
 }
 
-func (f *fullSessionChannelHandler) OnWindow(_ uint32, _ uint32, _ uint32, _ uint32) error {
+func (f *fullSessionChannelHandler) OnWindow(_ uint64, _ uint32, _ uint32, _ uint32, _ uint32) error {
 	return nil
 }
 

@@ -81,60 +81,77 @@ type ChannelRejection interface {
 type SSHConnectionHandler interface {
 	// OnUnsupportedGlobalRequest captures all global SSH requests and gives the implementation an opportunity to log
 	//                            the request.
-	OnUnsupportedGlobalRequest(requestType string, payload []byte)
+	//
+	// requestID is an ID uniquely identifying the request within the scope connection. The same ID may appear within
+	//           a channel.
+	OnUnsupportedGlobalRequest(requestID uint64, requestType string, payload []byte)
 
 	// OnUnsupportedChannel is called when a new channel is requested of an unsupported type. This gives the implementer
 	//                      the ability to log unsupported channel requests.
-	OnUnsupportedChannel(channelType string, extraData []byte)
+	//
+	// channelID is an ID uniquely identifying the channel within the connection.
+	// channelType is the type of channel requested by the client. We only support the "session" channel type
+	// extraData contains the binary extra data submitted by the client. This is usually empty.
+	OnUnsupportedChannel(channelID uint64, channelType string, extraData []byte)
 
 	// OnSessionChannel is called when a channel of the session type is requested. The implementer must either return
 	//                  the channel result if the channel was successful, or failureReason to state why the channel
 	//                  should be rejected.
-	OnSessionChannel(extraData []byte) (channel SessionChannelHandler, failureReason ChannelRejection)
+	//
+	// channelID is an ID uniquely identifying the channel within the connection.
+	// extraData contains the binary extra data submitted by the client. This is usually empty.
+	OnSessionChannel(channelID uint64, extraData []byte) (channel SessionChannelHandler, failureReason ChannelRejection)
 }
+
+// ExitStatus contains the status code with which the program exited.
+// See RFC 4254 section 6.10: Returning Exit Status for details. ( https://tools.ietf.org/html/rfc4254#section-6.10 )
+type ExitStatus uint32
 
 // SessionChannelHandler is a channel of the "session" type used for interactive and non-interactive sessions
 type SessionChannelHandler interface {
+	//region Channel request initialization
+
 	// OnUnsupportedChannelRequest captures channel requests of unsupported types.
+	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
+	// requestType contains the SSH request type.
+	// payload is the binary payload.
 	OnUnsupportedChannelRequest(
+		requestID uint64,
 		requestType string,
 		payload []byte,
 	)
 
 	// OnFailedDecodeChannelRequest is called when a supported channel request was received, but the payload could not
 	//                              be decoded.
+	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
+	// requestType contains the SSH request type.
+	// payload is the binary payload.
+	// reason is the reason why the decoding failed.
 	OnFailedDecodeChannelRequest(
+		requestID uint64,
 		requestType string,
 		payload []byte,
 		reason error,
 	)
 
+	//endregion
+
+	//region Requests before program execution
+
 	// OnEnvRequest is called when the client requests an environment variable to be set. The implementation can return
 	//              an error to reject the request.
 	OnEnvRequest(
+		requestID uint64,
 		name string,
 		value string,
-	) error
-
-	// OnExecRequest is called when the client request a program to be executed. The implementation can return an error
-	//               to reject the request.
-	//
-	// program is the name of the program to be executed.
-	// stdin is a reader for the shell or program to read the stdin.
-	// stdout is a writer for the shell or program standard output.
-	// stderr is a writer for the shell or program standard error.
-	// onExit is a callback to send the exit status back to the client.
-	OnExecRequest(
-		program string,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-		onExit func(exitStatus uint32),
 	) error
 
 	// OnPtyRequest is called when the client requests an interactive terminal to be allocated. The implementation can
 	//              return an error to reject the request.
 	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// term is the terminal name. This is usually set in the TERM environment variable.
 	// columns is the number of columns in the terminal.
 	// rows is the number of rows in the terminal.
@@ -142,6 +159,7 @@ type SessionChannelHandler interface {
 	// height is the height of a terminal in pixels.
 	// modelist are the encoded terminal modes the client desires. See RFC4254 section 8 and RFC8160 for details.
 	OnPtyRequest(
+		requestID uint64,
 		term string,
 		columns uint32,
 		rows uint32,
@@ -150,52 +168,89 @@ type SessionChannelHandler interface {
 		modeList []byte,
 	) error
 
+	//endregion
+
+	//region Program execution
+
+	// OnExecRequest is called when the client request a program to be executed. The implementation can return an error
+	//               to reject the request.
+	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
+	// program is the name of the program to be executed.
+	// stdin is a reader for the shell or program to read the stdin.
+	// stdout is a writer for the shell or program standard output.
+	// stderr is a writer for the shell or program standard error.
+	// onExit is a callback to send the exit status back to the client.
+	OnExecRequest(
+		requestID uint64,
+		program string,
+		stdin io.Reader,
+		stdout io.Writer,
+		stderr io.Writer,
+		onExit func(exitStatus ExitStatus),
+	) error
+
 	// OnShell is called when the client requests a shell to be started. The implementation can return an error to
 	//         reject the request. The implementation should send the IO handling into background. It should also
 	//         respect the shutdown context on the Handler.
 	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// stdin is a reader for the shell or program to read the stdin.
 	// stdout is a writer for the shell or program standard output.
 	// stderr is a writer for the shell or program standard error.
 	// onExit is a callback to send the exit status back to the client.
 	OnShell(
+		requestID uint64,
 		stdin io.Reader,
 		stdout io.Writer,
 		stderr io.Writer,
-		onExit func(exitStatus uint32),
+		onExit func(exitStatus ExitStatus),
 	) error
-
-	// OnSignal is called when the client requests a signal to be sent to the running process. The implementation can
-	//          return an error to reject the request.
-	OnSignal(signal string) error
 
 	// OnSubsystem is called when the client calls a well-known subsystem (e.g. sftp). The implementation can return an
 	//             error to reject the request. The implementation should send the IO handling into background. It
 	//             should also respect the shutdown context on the Handler.
 	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// stdin is a reader for the shell or program to read the stdin.
 	// stdout is a writer for the shell or program standard output.
 	// stderr is a writer for the shell or program standard error.
 	// onExit is a callback to send the exit status back to the client.
 	OnSubsystem(
+		requestID uint64,
 		subsystem string,
 		stdin io.Reader,
 		stdout io.Writer,
 		stderr io.Writer,
-		onExit func(exitStatus uint32),
+		onExit func(exitStatus ExitStatus),
 	) error
 
-	// OnWindow is called when the client requests requests the window size to be changed. The implementation can
-	//              return an error to reject the request.
+	//endregion
+
+	//region Requests during program execution
+
+	// OnSignal is called when the client requests a signal to be sent to the running process. The implementation can
+	//          return an error to reject the request.
+	OnSignal(
+		requestID uint64,
+		signal string,
+	) error
+
+	// OnWindow is called when the client requests requests the window size to be changed. This method may be called
+	//          after a program is started. The implementation can return an error to reject the request.
 	//
+	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// columns is the number of columns in the terminal.
 	// rows is the number of rows in the terminal.
 	// width is the width of the terminal in pixels.
 	// height is the height of a terminal in pixels.
 	OnWindow(
+		requestID uint64,
 		columns uint32,
 		rows uint32,
 		width uint32,
 		height uint32,
 	) error
+
+	//endregion
 }
