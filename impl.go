@@ -177,7 +177,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		_ = conn.Close()
 		return
 	}
-	handlerNetworkConnection, err := s.handler.OnNetworkConnection(addr, connectionID)
+	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, connectionID)
 	if err != nil {
 		s.logger.Infoe(err)
 		_ = conn.Close()

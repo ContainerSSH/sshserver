@@ -251,7 +251,7 @@ func (r *rejectHandler) OnReady() error {
 func (r *rejectHandler) OnShutdown(_ context.Context) {
 }
 
-func (r *rejectHandler) OnNetworkConnection(_ *net.TCPAddr, _ []byte) (sshserver.NetworkConnectionHandler, error) {
+func (r *rejectHandler) OnNetworkConnection(_ net.TCPAddr, _ []byte) (sshserver.NetworkConnectionHandler, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
@@ -289,7 +289,7 @@ func (f *fullHandler) OnShutdown(shutdownContext context.Context) {
 	f.shutdownContext = shutdownContext
 }
 
-func (f *fullHandler) OnNetworkConnection(_ *net.TCPAddr, _ []byte) (sshserver.NetworkConnectionHandler, error) {
+func (f *fullHandler) OnNetworkConnection(_ net.TCPAddr, _ []byte) (sshserver.NetworkConnectionHandler, error) {
 	return &fullNetworkConnectionHandler{
 		handler: f,
 	}, nil
