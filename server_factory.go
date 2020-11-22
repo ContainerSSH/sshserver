@@ -1,7 +1,6 @@
 package sshserver
 
 import (
-	"context"
 	"sync"
 
 	"github.com/containerssh/log"
@@ -12,16 +11,12 @@ func New(cfg Config, handler Handler, logger log.Logger) (Server, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &server{
-		cfg:             cfg,
-		handler:         handler,
-		logger:          logger,
-		ctx:             ctx,
-		cancelFunc:      cancelFunc,
-		wg:              &sync.WaitGroup{},
-		lock:            &sync.Mutex{},
-		shutdownContext: nil,
-		listenSocket:    nil,
+		cfg:          cfg,
+		handler:      handler,
+		logger:       logger,
+		wg:           &sync.WaitGroup{},
+		lock:         &sync.Mutex{},
+		listenSocket: nil,
 	}, nil
 }

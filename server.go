@@ -1,16 +1,11 @@
 package sshserver
 
 import (
-	"context"
+	"github.com/containerssh/service"
 )
 
-// Server is the main server for running a server
+// Server is the main SSH server interface, compatible with the Service library. It should always be used in conjunction
+// with the Lifecycle interface from the service library.
 type Server interface {
-	// Run runs the server synchronously. This function returns when the server has stopped.
-	Run() error
-
-	// Shutdown signals the server to not accept any more connections and shut down. When shutdownContext
-	// expires the server aborts active connections and shuts down the server.
-	// The method waits for the server to shut down.
-	Shutdown(shutdownContext context.Context)
+	service.Service
 }

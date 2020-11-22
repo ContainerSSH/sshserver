@@ -12,8 +12,7 @@ This library provides an overlay for the built-in go SSH server library that mak
 
 ## Using this library
 
-This library provides a friendlier way to handle SSH requests than with the built-in SSH library. As a primary entry
-point you will need to create and run the SSH server:
+This library provides a friendlier way to handle SSH requests than with the built-in SSH library. the primary method of using this library is via the `Lifecycle` objects from the [service library](https://github.com/containerssh/service):
 
 ```go
 // Create the server. See the description below for parameters.
@@ -26,11 +25,12 @@ if err != nil {
     // Handle configuration errors
     log.Fatalf("%v", err)
 }
+lifecycle := service.NewLifecycle(server)
 
 defer func() {
     // The Run method will run the server and return when the server is shut down.
     // We are running this in a goroutine so the shutdown below can proceed after a minute.
-    if err := server.Run(); err != nil {
+    if err := lifecycle.Run(); err != nil {
         // Handle errors while running the server
     }
 }()
@@ -40,7 +40,7 @@ time.Sleep(60 * time.Second)
 // Shut down the server. Pass a context to indicate how long the server should wait
 // for existing connections to finish. This function will return when the server
 // has stopped. 
-server.Shutdown(
+lifecycle.Stop(
     context.WithTimeout(
         context.Background(),
         30 * time.Second,
@@ -63,4 +63,4 @@ The handler interface consists of multiple parts:
 - The `SSHConnectionHandler` is responsible for handling an individual SSH connection. Most importantly, it is responsible for providing a `SessionChannelHandler` when a new session channel is requested by the client.
 - The `SessionChannelHandler` is responsible for an individual session channel (single program execution). It provides several hooks for setting up and running the program. Once the program execution is complete the channel is closed. You must, however, keep handling requests (e.g. window size change) during program execution.
 
-A sample implementation can be found in the [test code](impl_test.go) at the bottom of the file.
+A sample implementation can be found in the [test code](integration_test.go) at the bottom of the file.

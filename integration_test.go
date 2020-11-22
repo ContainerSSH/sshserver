@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/containerssh/log/standard"
+	"github.com/containerssh/service"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 
@@ -33,13 +34,14 @@ func TestReadyRejection(t *testing.T) {
 		assert.Fail(t, "failed to create server", err)
 		return
 	}
-	err = server.Run()
+	lifecycle := service.NewLifecycle(server)
+	err = lifecycle.Run()
 	if err == nil {
 		assert.Fail(t, "server.Run() did not result in an error")
 	} else {
 		assert.Equal(t, "rejected", err.Error())
 	}
-	server.Shutdown(context.Background())
+	lifecycle.Stop(context.Background())
 }
 
 func TestAuthFailed(t *testing.T) {
@@ -187,6 +189,7 @@ func newServerHelper(t *testing.T, listen string, passwords map[string][]byte) *
 type serverHelper struct {
 	t         *testing.T
 	server    sshserver.Server
+	lifecycle service.Lifecycle
 	passwords map[string][]byte
 	listen    string
 }
@@ -213,8 +216,10 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 	if err != nil {
 		return hostKey, err
 	}
+	lifecycle := service.NewLifecycle(server)
+	h.lifecycle = lifecycle
 	go func() {
-		err = server.Run()
+		err = lifecycle.Run()
 		if err != nil {
 			errChannel <- err
 		}
@@ -230,8 +235,8 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 }
 
 func (h *serverHelper) stop() {
-	if h.server != nil {
-		h.server.Shutdown(context.Background())
+	if h.lifecycle != nil {
+		h.lifecycle.Stop(context.Background())
 	}
 }
 
@@ -343,7 +348,7 @@ func (f *fullSSHConnectionHandler) OnUnsupportedGlobalRequest(_ uint64, _ string
 
 }
 
-func (f *fullSSHConnectionHandler) OnUnsupportedChannel(_ uint64,_ string, _ []byte) {
+func (f *fullSSHConnectionHandler) OnUnsupportedChannel(_ uint64, _ string, _ []byte) {
 
 }
 

@@ -1,12 +1,12 @@
 package sshserver
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"sync"
 
 	"github.com/containerssh/log"
+	"github.com/containerssh/service"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
@@ -14,9 +14,6 @@ import (
 type server struct {
 	cfg                 Config
 	logger              log.Logger
-	ctx                 context.Context
-	shutdownContext     context.Context
-	cancelFunc          context.CancelFunc
 	handler             Handler
 	listenSocket        net.Listener
 	wg                  *sync.WaitGroup
@@ -26,59 +23,17 @@ type server struct {
 	nextChannelID       uint64
 }
 
-func (s *server) Shutdown(shutdownContext context.Context) {
-	s.lock.Lock()
-	if s.listenSocket == nil {
-		return
-	}
-	s.handler.OnShutdown(shutdownContext)
-	if s.listenSocket != nil {
-		if err := s.listenSocket.Close(); err != nil {
-			s.logger.Errorf("failed to close listen socket (%v)", err)
-		}
-		s.listenSocket = nil
-	}
-	s.cancelFunc()
-	s.shutdownContext = shutdownContext
-	s.lock.Unlock()
-
-	done := make(chan bool)
-	go func() {
-		if shutdownContext.Done() == nil {
-			<-done
-			return
-		}
-		select {
-		case <-shutdownContext.Done():
-			//The shutdown context has expired and the server hasn't shut down, close existing connections.
-			s.lock.Lock()
-			for serverSocket := range s.clientSockets {
-				if err := serverSocket.Close(); err != nil {
-					s.logger.Debugf(
-						"failed to close client socket for %s (%v)",
-						serverSocket.RemoteAddr().String(),
-						err,
-					)
-				}
-			}
-			s.clientSockets = map[*ssh.ServerConn]bool{}
-			s.lock.Unlock()
-		case <-done:
-		}
-	}()
-	s.wg.Wait()
-	done <- true
+func (s *server) String() string {
+	return "SSH server"
 }
 
-func (s *server) Run() error {
+func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	s.lock.Lock()
 	alreadyRunning := false
 	if s.listenSocket != nil {
 		alreadyRunning = true
 	} else {
 		s.clientSockets = make(map[*ssh.ServerConn]bool)
-		// Reset shutdown context in case of a second run
-		s.shutdownContext = nil
 	}
 	s.lock.Unlock()
 
@@ -86,7 +41,6 @@ func (s *server) Run() error {
 		return fmt.Errorf("SSH server is already running")
 	}
 
-	s.logger.Debugf("starting SSH server on %s", s.cfg.Listen)
 	netListener, err := net.Listen("tcp", s.cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("failed to start SSH server on %s (%w)", s.cfg.Listen, err)
@@ -95,8 +49,15 @@ func (s *server) Run() error {
 	if err := s.handler.OnReady(); err != nil {
 		return err
 	}
+	lifecycle.Running()
 	s.logger.Debugf("SSH server running on %s", s.cfg.Listen)
 
+	go func() {
+		<-lifecycle.Context().Done()
+		if err := s.listenSocket.Close(); err != nil {
+			s.logger.Errorf("failed to close listen socket (%v)", err)
+		}
+	}()
 	for {
 		tcpConn, err := netListener.Accept()
 		if err != nil {
@@ -104,15 +65,33 @@ func (s *server) Run() error {
 			break
 		}
 		go s.handleConnection(tcpConn)
-		select {
-		case <-s.ctx.Done():
-			break
-		default:
+	}
+	allClientsExited := make(chan struct{})
+	go s.disconnectClients(lifecycle, allClientsExited)
+	s.wg.Wait()
+	close(allClientsExited)
+	return nil
+}
+
+func (s *server) disconnectClients(lifecycle service.Lifecycle, allClientsExited chan struct{}) {
+	select {
+	case <-allClientsExited:
+		return
+	case <-lifecycle.ShutdownContext().Done():
+	}
+
+	s.lock.Lock()
+	for serverSocket := range s.clientSockets {
+		if err := serverSocket.Close(); err != nil {
+			s.logger.Debugf(
+				"failed to close client socket for %s (%v)",
+				serverSocket.RemoteAddr().String(),
+				err,
+			)
 		}
 	}
-	// Wait for all connections to finish
-	s.wg.Wait()
-	return nil
+	s.clientSockets = map[*ssh.ServerConn]bool{}
+	s.lock.Unlock()
 }
 
 func (s *server) createPasswordAuthenticator(
