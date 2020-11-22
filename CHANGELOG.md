@@ -1,3 +1,43 @@
+# 0.9.3: Upgraded this library to match the new service library
+
+Previously, the SSH server could be started and stopped directly using the `Run()` and `Shutdown()` methods. This change integrates the SSH server with the new [service library](https://github.com/containerssh/service) that makes it easier to manage multiple services in a single daemon. As a side effect, the SSH server can now only be started using the `Lifecycle` object:
+
+```go
+// Create the server. See the description below for parameters.
+server, err := sshserver.New(
+    cfg,
+    handler,
+    logger,
+)
+if err != nil {
+    // Handle configuration errors
+    log.Fatalf("%v", err)
+}
+lifecycle := service.NewLifecycle(server)
+
+defer func() {
+    // The Run method will run the server and return when the server is shut down.
+    // We are running this in a goroutine so the shutdown below can proceed after a minute.
+    if err := lifecycle.Run(); err != nil {
+        // Handle errors while running the server
+    }
+}()
+
+time.Sleep(60 * time.Second)
+
+// Shut down the server. Pass a context to indicate how long the server should wait
+// for existing connections to finish. This function will return when the server
+// has stopped. 
+lifecycle.Stop(
+    context.WithTimeout(
+        context.Background(),
+        30 * time.Second,
+    ),
+)
+```
+
+This gives you the option to register hooks for the various lifecycle events. For more details see the [service library](https://github.com/containerssh/service).
+
 # 0.9.2: Added request and channel IDs (November 15, 2020)
 
 **This release adds unique global request IDs, channel IDs and channel request IDs.**
@@ -110,4 +150,4 @@ The handler interface consists of multiple parts:
 - The `SSHConnectionHandler` is responsible for handling an individual SSH connection. Most importantly, it is responsible for providing a `SessionChannelHandler` when a new session channel is requested by the client.
 - The `SessionChannelHandler` is responsible for an individual session channel (single program execution). It provides several hooks for setting up and running the program. Once the program execution is complete the channel is closed. You must, however, keep handling requests (e.g. window size change) during program execution.
 
-A sample implementation can be found in the [test code](impl_test.go) at the bottom of the file.
+A sample implementation can be found in the [test code](server_impl.go) at the bottom of the file.
