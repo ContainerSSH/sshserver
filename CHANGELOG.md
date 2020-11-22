@@ -1,4 +1,6 @@
-# 0.9.3: Upgraded this library to match the new service library (November 22, 2020)
+# Changelog
+
+## 0.9.3: Upgraded this library to match the new service library (November 22, 2020)
 
 Previously, the SSH server could be started and stopped directly using the `Run()` and `Shutdown()` methods. This change integrates the SSH server with the new [service library](https://github.com/containerssh/service) that makes it easier to manage multiple services in a single daemon. As a side effect, the SSH server can now only be started using the `Lifecycle` object:
 
@@ -38,7 +40,9 @@ lifecycle.Stop(
 
 This gives you the option to register hooks for the various lifecycle events. For more details see the [service library](https://github.com/containerssh/service).
 
-# 0.9.2: Added request and channel IDs (November 15, 2020)
+---
+
+## 0.9.2: Added request and channel IDs (November 15, 2020)
 
 **This release adds unique global request IDs, channel IDs and channel request IDs.**
 
@@ -48,13 +52,13 @@ Furthermore, the `onExit` methods in the `SessionChannelHandler` interface now t
 
 The affected method changes are listed below.
 
-## Changes to the `SSHConnectionHandler` interface
+### Changes to the `SSHConnectionHandler` interface
 
 - `OnUnsupportedGlobalRequest(requestID uint64, ...)`: added `requestID`
 - `OnUnsupportedChannel(channelID uint64, ...)`: added `channelID`
 - `OnSessionChannel(channelID uint64, ...) (...)`: added `channelID`
 
-## Changes to the `SessionChannelHandler` interface
+### Changes to the `SessionChannelHandler` interface
 
 - `OnUnsupportedChannelRequest(requestID uint64, ...)`: added `requestID`
 - `OnFailedDecodeChannelRequest(requestID uint64, ...)`: added `requestID`
@@ -68,7 +72,7 @@ The affected method changes are listed below.
 
 ---
 
-# 0.9.1: Better OnNetworkConnection API (November 15, 2020)
+## 0.9.1: Better OnNetworkConnection API (November 15, 2020)
 
 **This release changes the API of the `OnNetworkConnection()` method of the `Handler` interface.**
 
@@ -83,21 +87,21 @@ type Handler interface {
 }
 ```
 
-## Changes to the `ip` parameter
+### Changes to the `ip` parameter
 
 Previously, the `ip` parameter was of the type `net.Addr` and is now changed to `*net.TCPAddr`. This was the default because the Go SSH library supports SSH connections over non-IP transports such as Unix sockets. However, the only use case for this scenario seems to be for writing tests so ContainerSSH does not support it. Therefore, we are changing the API to make it easier to extract the IP address and connecting port of the client.
 
-## Adding the `connectionID` parameter
+### Adding the `connectionID` parameter
 
 We are also adding the `connectionID` parameter. This parameter was previously generated in the [auditlog](https://github.com/containerssh/auditlog) library for audit logging purposes only. This change is done so that multiple libraries (e.g. auth, auditlog, etc) can use the same connection ID to track the connection across these systems.
 
 ---
 
-# 0.9.0: Initial version (November 8, 2020)
+## 0.9.0: Initial version (November 8, 2020)
 
 This is the initial version of the SSH server library.
 
-## Using this library
+### Using this library
 
 This library provides a friendlier way to handle SSH requests than with the built-in SSH library. As a primary entry
 point you will need to create and run the SSH server:
@@ -141,7 +145,7 @@ The `handler` variable must be an implementation of the [`Handler` interface des
 
 The `logger` variable needs to be an instance of the `Logger` interface from [github.com/containerssh/log](https://github.com/containerssh/log).
 
-## Implementing a handler
+### Implementing a handler
 
 The handler interface consists of multiple parts:
 
