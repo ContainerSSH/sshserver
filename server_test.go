@@ -46,7 +46,7 @@ func TestReadyRejection(t *testing.T) {
 }
 
 func TestAuthFailed(t *testing.T) {
-	server := newServerHelper(t, "0.0.0.0:2222", map[string][]byte{
+	server := newServerHelper(t, "127.0.0.1:2222", map[string][]byte{
 		"foo": []byte("bar"),
 	})
 	hostKey, err := server.start()
@@ -70,7 +70,7 @@ func TestAuthFailed(t *testing.T) {
 		return fmt.Errorf("invalid host")
 	}
 
-	sshConnection, err := ssh.Dial("tcp", "0.0.0.0:2222", sshConfig)
+	sshConnection, err := ssh.Dial("tcp", "127.0.0.1:2222", sshConfig)
 	if err != nil {
 		if !strings.Contains(err.Error(), "unable to authenticate") {
 			assert.Fail(t, "handshake failed for non-auth reasons", err)

@@ -41,7 +41,11 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 		return fmt.Errorf("SSH server is already running")
 	}
 
-	netListener, err := net.Listen("tcp", s.cfg.Listen)
+	listenConfig := net.ListenConfig{
+		Control: s.socketControl,
+	}
+
+	netListener, err := listenConfig.Listen(lifecycle.Context(), "tcp", s.cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("failed to start SSH server on %s (%w)", s.cfg.Listen, err)
 	}
