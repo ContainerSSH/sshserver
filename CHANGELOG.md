@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.4: Bugfixing shutdown hander
+
+This release contains a bugfix from 0.9.3 where the shutdown handler would not be properly called after the refactor. This release properly calls the shutdown handler.
+
 ## 0.9.3: Upgraded this library to match the new service library (November 22, 2020)
 
 Previously, the SSH server could be started and stopped directly using the `Run()` and `Shutdown()` methods. This change integrates the SSH server with the new [service library](https://github.com/containerssh/service) that makes it easier to manage multiple services in a single daemon. As a side effect, the SSH server can now only be started using the `Lifecycle` object:
