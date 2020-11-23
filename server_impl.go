@@ -67,9 +67,13 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 		go s.handleConnection(tcpConn)
 	}
 	allClientsExited := make(chan struct{})
+	shutdownHandlerExited := make(chan struct{}, 1)
 	go s.disconnectClients(lifecycle, allClientsExited)
+	go s.shutdownHandler(lifecycle, shutdownHandlerExited)
+
 	s.wg.Wait()
 	close(allClientsExited)
+	<-shutdownHandlerExited
 	return nil
 }
 
@@ -503,4 +507,9 @@ func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandle
 		payload.(windowRequestPayload).width,
 		payload.(windowRequestPayload).height,
 	)
+}
+
+func (s *server) shutdownHandler(lifecycle service.Lifecycle, exited chan struct{}) {
+	s.handler.OnShutdown(lifecycle.ShutdownContext())
+	exited <- struct{}{}
 }

@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/containerssh/log/standard"
 	"github.com/containerssh/service"
@@ -53,7 +54,10 @@ func TestAuthFailed(t *testing.T) {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
 	}
-	defer server.stop()
+	defer func() {
+		server.stop()
+		<-server.shutdownChannel
+	}()
 
 	sshConfig := &ssh.ClientConfig{
 		User: "foo",
@@ -86,7 +90,10 @@ func TestSessionSuccess(t *testing.T) {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
 	}
-	defer server.stop()
+	defer func() {
+		server.stop()
+		<-server.shutdownChannel
+	}()
 
 	reply, exitStatus, err := shellRequestReply("127.0.0.1:2222", "foo", "bar", hostKey, []byte("Hi"))
 	assert.Equal(t, []byte("Hello world!"), reply)
@@ -103,7 +110,10 @@ func TestSessionError(t *testing.T) {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
 	}
-	defer server.stop()
+	defer func() {
+		server.stop()
+		<-server.shutdownChannel
+	}()
 
 	reply, exitStatus, err := shellRequestReply("127.0.0.1:2222", "foo", "bar", hostKey, []byte("Ho"))
 	assert.Equal(t, 1, exitStatus)
@@ -187,11 +197,12 @@ func newServerHelper(t *testing.T, listen string, passwords map[string][]byte) *
 }
 
 type serverHelper struct {
-	t         *testing.T
-	server    sshserver.Server
-	lifecycle service.Lifecycle
-	passwords map[string][]byte
-	listen    string
+	t               *testing.T
+	server          sshserver.Server
+	lifecycle       service.Lifecycle
+	passwords       map[string][]byte
+	listen          string
+	shutdownChannel chan struct{}
 }
 
 func (h *serverHelper) start() (hostKey []byte, err error) {
@@ -205,10 +216,12 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 	}
 	hostKey = config.HostKeys[0].PublicKey().Marshal()
 	logger := standard.New()
-	readyChannel := make(chan bool, 1)
+	readyChannel := make(chan struct{}, 1)
+	h.shutdownChannel = make(chan struct{}, 1)
 	errChannel := make(chan error, 1)
 	handler := newFullHandler(
 		readyChannel,
+		h.shutdownChannel,
 		h.passwords,
 		map[string][]byte{},
 	)
@@ -236,7 +249,9 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 
 func (h *serverHelper) stop() {
 	if h.lifecycle != nil {
-		h.lifecycle.Stop(context.Background())
+		shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		h.lifecycle.Stop(shutdownContext)
+		cancelFunc()
 	}
 }
 
@@ -264,14 +279,15 @@ func (r *rejectHandler) OnNetworkConnection(_ net.TCPAddr, _ []byte) (sshserver.
 
 //region Full
 
-func newFullHandler(readyChannel chan bool, passwords map[string][]byte, pubKeys map[string][]byte) sshserver.Handler {
+func newFullHandler(readyChannel chan struct{}, shutdownChannel chan struct{}, passwords map[string][]byte, pubKeys map[string][]byte) sshserver.Handler {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &fullHandler{
-		ctx:        ctx,
-		cancelFunc: cancelFunc,
-		ready:      readyChannel,
-		passwords:  passwords,
-		pubKeys:    pubKeys,
+		ctx:          ctx,
+		cancelFunc:   cancelFunc,
+		ready:        readyChannel,
+		shutdownDone: shutdownChannel,
+		passwords:    passwords,
+		pubKeys:      pubKeys,
 	}
 }
 
@@ -282,16 +298,19 @@ type fullHandler struct {
 	cancelFunc      context.CancelFunc
 	passwords       map[string][]byte
 	pubKeys         map[string][]byte
-	ready           chan bool
+	ready           chan struct{}
+	shutdownDone    chan struct{}
 }
 
 func (f *fullHandler) OnReady() error {
-	f.ready <- true
+	f.ready <- struct{}{}
 	return nil
 }
 
 func (f *fullHandler) OnShutdown(shutdownContext context.Context) {
 	f.shutdownContext = shutdownContext
+	<-f.shutdownContext.Done()
+	f.shutdownDone <- struct{}{}
 }
 
 func (f *fullHandler) OnNetworkConnection(_ net.TCPAddr, _ []byte) (sshserver.NetworkConnectionHandler, error) {
