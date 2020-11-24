@@ -51,6 +51,9 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	}
 	s.listenSocket = netListener
 	if err := s.handler.OnReady(); err != nil {
+		if err := netListener.Close(); err != nil {
+			s.logger.Warningf("failed to close listen socket after failed startup (%v)", err)
+		}
 		return err
 	}
 	lifecycle.Running()
