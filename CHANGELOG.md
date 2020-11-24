@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.9.4: Bugfixing shutdown hander
+## 0.9.5: Bugfixing the OnReady handler
+
+In 0.9.3 we introduced a bug in the OnReady handler that caused the listen socket to stay open even if the OnReady handler exited with an error. This resulted in an "address already in use" error on Linux.
+
+## 0.9.4: Bugfixing the shutdown hander
 
 This release contains a bugfix from 0.9.3 where the shutdown handler would not be properly called after the refactor. This release properly calls the shutdown handler.
 
