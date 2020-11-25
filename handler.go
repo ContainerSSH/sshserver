@@ -61,7 +61,7 @@ type NetworkConnectionHandler interface {
 	// OnHandshakeSuccess is called when the SSH handshake was successful. It returns connection to process
 	//                    requests, or failureReason to indicate that a backend error has happened. In this case, the
 	//                    connection will be closed and OnDisconnect will be called.
-	OnHandshakeSuccess() (connection SSHConnectionHandler, failureReason error)
+	OnHandshakeSuccess(username string) (connection SSHConnectionHandler, failureReason error)
 
 	// OnDisconnect is called when the network connection is closed.
 	OnDisconnect()

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.6: OnHandshakeSuccess takes username
+
+With `0.9.6` we are introducing the `user` parameter to the `OnHandshakeSuccess()` method. This is done in preparation to supporting SSH connections without authentication.
+
 ## 0.9.5: Bugfixing the OnReady handler
 
 In 0.9.3 we introduced a bug in the OnReady handler that caused the listen socket to stay open even if the OnReady handler exited with an error. This resulted in an "address already in use" error on Linux.

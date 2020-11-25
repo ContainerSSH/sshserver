@@ -345,7 +345,7 @@ func (f *fullNetworkConnectionHandler) OnHandshakeFailed(_ error) {
 
 }
 
-func (f *fullNetworkConnectionHandler) OnHandshakeSuccess() (connection sshserver.SSHConnectionHandler, failureReason error) {
+func (f *fullNetworkConnectionHandler) OnHandshakeSuccess(_ string) (connection sshserver.SSHConnectionHandler, failureReason error) {
 	return &fullSSHConnectionHandler{
 		handler: f.handler,
 	}, nil

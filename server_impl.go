@@ -195,7 +195,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		handlerNetworkConnection.OnDisconnect()
 		s.wg.Done()
 	}()
-	handlerSSHConnection, failureReason := handlerNetworkConnection.OnHandshakeSuccess()
+	handlerSSHConnection, failureReason := handlerNetworkConnection.OnHandshakeSuccess(sshConn.User())
 	if failureReason != nil {
 		s.logger.Debugf("handshake success handler returned with error (%v)", err)
 		// No need to close connection, already closed.
