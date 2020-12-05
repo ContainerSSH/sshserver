@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.8: Changing the pubKey authenticator to use the authorized key format
+
+In this release we are changing the `OnAuthPubKey` method of the `NetworkConnectionHandler` interface to receive a `string` instead of a `[]byte` for the pubkey. The SSH server implementation now passes the SSH key in the [OpenSSH authorized key format](https://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#~/.ssh/authorized_keys) to make it easier for implementers to match the key.
+
 ## 0.9.7: Changing `connectionID`
 
 This release changes the `connectionID` parameter to a string. This better conveys that it is a printable string and can be safely used in filenames, etc.

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/containerssh/log"
@@ -128,7 +129,8 @@ func (s *server) createPubKeyAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
 ) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
 	return func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
-		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), pubKey.Marshal())
+		authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
+		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), authorizedKey)
 		switch authResponse {
 		case AuthResponseSuccess:
 			return &ssh.Permissions{}, nil

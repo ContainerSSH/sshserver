@@ -3,6 +3,8 @@ package sshserver_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
@@ -46,9 +48,14 @@ func TestReadyRejection(t *testing.T) {
 }
 
 func TestAuthFailed(t *testing.T) {
-	server := newServerHelper(t, "127.0.0.1:2222", map[string][]byte{
-		"foo": []byte("bar"),
-	})
+	server := newServerHelper(
+		t,
+		"127.0.0.1:2222",
+		map[string][]byte{
+			"foo": []byte("bar"),
+		},
+		map[string]string{},
+	)
 	hostKey, err := server.start()
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
@@ -82,9 +89,14 @@ func TestAuthFailed(t *testing.T) {
 }
 
 func TestSessionSuccess(t *testing.T) {
-	server := newServerHelper(t, "127.0.0.1:2222", map[string][]byte{
-		"foo": []byte("bar"),
-	})
+	server := newServerHelper(
+		t,
+		"127.0.0.1:2222",
+		map[string][]byte{
+			"foo": []byte("bar"),
+		},
+		map[string]string{},
+	)
 	hostKey, err := server.start()
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
@@ -95,16 +107,27 @@ func TestSessionSuccess(t *testing.T) {
 		<-server.shutdownChannel
 	}()
 
-	reply, exitStatus, err := shellRequestReply("127.0.0.1:2222", "foo", "bar", hostKey, []byte("Hi"))
+	reply, exitStatus, err := shellRequestReply(
+		"127.0.0.1:2222",
+		"foo",
+		ssh.Password("bar"),
+		hostKey,
+		[]byte("Hi"),
+	)
 	assert.Equal(t, []byte("Hello world!"), reply)
 	assert.Equal(t, 0, exitStatus)
 	assert.Equal(t, nil, err)
 }
 
 func TestSessionError(t *testing.T) {
-	server := newServerHelper(t, "127.0.0.1:2222", map[string][]byte{
-		"foo": []byte("bar"),
-	})
+	server := newServerHelper(
+		t,
+		"127.0.0.1:2222",
+		map[string][]byte{
+			"foo": []byte("bar"),
+		},
+		map[string]string{},
+	)
 	hostKey, err := server.start()
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
@@ -115,20 +138,72 @@ func TestSessionError(t *testing.T) {
 		<-server.shutdownChannel
 	}()
 
-	reply, exitStatus, err := shellRequestReply("127.0.0.1:2222", "foo", "bar", hostKey, []byte("Ho"))
+	reply, exitStatus, err := shellRequestReply(
+		"127.0.0.1:2222",
+		"foo",
+		ssh.Password("bar"),
+		hostKey,
+		[]byte("Ho"),
+	)
 	assert.Equal(t, 1, exitStatus)
 	assert.Equal(t, []byte{}, reply)
 	assert.Equal(t, nil, err)
+}
+
+func TestPubKey(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(
+		rand.Reader,
+		2048,
+	)
+	assert.Nil(t, err, "failed to generate RSA key (%v)", err)
+	signer, err := ssh.NewSignerFromKey(rsaKey)
+	assert.Nil(t, err, "failed to create signer (%v)", err)
+	publicKey := signer.PublicKey()
+	authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(publicKey)))
+	server := newServerHelper(
+		t,
+		"127.0.0.1:2222",
+		map[string][]byte{},
+		map[string]string{
+			"foo": authorizedKey,
+		},
+	)
+	hostKey, err := server.start()
+	if err != nil {
+		assert.Fail(t, "failed to start ssh server", err)
+		return
+	}
+	defer func() {
+		server.stop()
+		<-server.shutdownChannel
+	}()
+
+	reply, exitStatus, err := shellRequestReply(
+		"127.0.0.1:2222",
+		"foo",
+		ssh.PublicKeys(signer),
+		hostKey,
+		[]byte("Hi"),
+	)
+	assert.Nil(t, err, "failed to send shell request (%v)", err)
+	assert.Equal(t, 0, exitStatus)
+	assert.Equal(t, []byte("Hello world!"), reply)
 }
 
 //endregion
 
 //region Helper
 
-func shellRequestReply(host string, user string, password string, hostKey []byte, request []byte) (reply []byte, exitStatus int, err error) {
+func shellRequestReply(
+	host string,
+	user string,
+	authMethod ssh.AuthMethod,
+	hostKey []byte,
+	request []byte,
+) (reply []byte, exitStatus int, err error) {
 	sshConfig := &ssh.ClientConfig{
 		User: user,
-		Auth: []ssh.AuthMethod{ssh.Password(password)},
+		Auth: []ssh.AuthMethod{authMethod},
 	}
 	sshConfig.HostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		if bytes.Equal(key.Marshal(), hostKey) {
@@ -151,13 +226,9 @@ func shellRequestReply(host string, user string, password string, hostKey []byte
 		return nil, -1, fmt.Errorf("new session failed (%w)", err)
 	}
 
-	stdin, err := session.StdinPipe()
+	stdin, stdout, err := createPipe(session)
 	if err != nil {
-		return nil, -1, fmt.Errorf("failed to request stdin (%w)", err)
-	}
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		return nil, -1, fmt.Errorf("failed to request stdout (%w)", err)
+		return nil, -1, err
 	}
 
 	if err := session.Shell(); err != nil {
@@ -166,6 +237,15 @@ func shellRequestReply(host string, user string, password string, hostKey []byte
 	if _, err := stdin.Write(request); err != nil {
 		return nil, -1, fmt.Errorf("failed to write to shell (%w)", err)
 	}
+	return read(stdout, stdin, session)
+}
+
+func read(stdout io.Reader, stdin io.WriteCloser, session *ssh.Session) (
+	[]byte,
+	int,
+	error,
+) {
+	var exitStatus int
 	data := make([]byte, 4096)
 	n, err := stdout.Read(data)
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -188,11 +268,29 @@ func shellRequestReply(host string, user string, password string, hostKey []byte
 	return data[:n], exitStatus, nil
 }
 
-func newServerHelper(t *testing.T, listen string, passwords map[string][]byte) *serverHelper {
+func createPipe(session *ssh.Session) (io.WriteCloser, io.Reader, error) {
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to request stdin (%w)", err)
+	}
+	stdout, err := session.StdoutPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to request stdout (%w)", err)
+	}
+	return stdin, stdout, nil
+}
+
+func newServerHelper(
+	t *testing.T,
+	listen string,
+	passwords map[string][]byte,
+	pubKeys map[string]string,
+) *serverHelper {
 	return &serverHelper{
 		t:         t,
 		listen:    listen,
 		passwords: passwords,
+		pubKeys:   pubKeys,
 	}
 }
 
@@ -201,6 +299,7 @@ type serverHelper struct {
 	server          sshserver.Server
 	lifecycle       service.Lifecycle
 	passwords       map[string][]byte
+	pubKeys         map[string]string
 	listen          string
 	shutdownChannel chan struct{}
 }
@@ -223,7 +322,7 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 		readyChannel,
 		h.shutdownChannel,
 		h.passwords,
-		map[string][]byte{},
+		h.pubKeys,
 	)
 	server, err := sshserver.New(config, handler, logger)
 	if err != nil {
@@ -279,7 +378,12 @@ func (r *rejectHandler) OnNetworkConnection(_ net.TCPAddr, _ string) (sshserver.
 
 //region Full
 
-func newFullHandler(readyChannel chan struct{}, shutdownChannel chan struct{}, passwords map[string][]byte, pubKeys map[string][]byte) sshserver.Handler {
+func newFullHandler(
+	readyChannel chan struct{},
+	shutdownChannel chan struct{},
+	passwords map[string][]byte,
+	pubKeys map[string]string,
+) sshserver.Handler {
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	return &fullHandler{
 		ctx:          ctx,
@@ -297,7 +401,7 @@ type fullHandler struct {
 	shutdownContext context.Context
 	cancelFunc      context.CancelFunc
 	passwords       map[string][]byte
-	pubKeys         map[string][]byte
+	pubKeys         map[string]string
 	ready           chan struct{}
 	shutdownDone    chan struct{}
 }
@@ -334,8 +438,8 @@ func (f *fullNetworkConnectionHandler) OnAuthPassword(username string, password 
 	return sshserver.AuthResponseFailure, fmt.Errorf("authentication failed")
 }
 
-func (f *fullNetworkConnectionHandler) OnAuthPubKey(username string, pubKey []byte) (response sshserver.AuthResponse, reason error) {
-	if storedPubKey, ok := f.handler.pubKeys[username]; ok && bytes.Equal(storedPubKey, pubKey) {
+func (f *fullNetworkConnectionHandler) OnAuthPubKey(username string, pubKey string) (response sshserver.AuthResponse, reason error) {
+	if storedPubKey, ok := f.handler.pubKeys[username]; ok && storedPubKey == pubKey {
 		return sshserver.AuthResponseSuccess, nil
 	}
 	return sshserver.AuthResponseFailure, fmt.Errorf("authentication failed")

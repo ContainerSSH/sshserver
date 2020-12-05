@@ -50,8 +50,9 @@ type NetworkConnectionHandler interface {
 	OnAuthPassword(username string, password []byte) (response AuthResponse, reason error)
 
 	// OnAuthPassword is called when a user attempts a pubkey authentication. The implementation must always supply
-	//                AuthResponse and may supply error as a reason description.
-	OnAuthPubKey(username string, pubKey []byte) (response AuthResponse, reason error)
+	//                AuthResponse and may supply error as a reason description. The pubKey parameter is an SSH key in
+	//               the form of "ssh-rsa KEY HERE".
+	OnAuthPubKey(username string, pubKey string) (response AuthResponse, reason error)
 
 	// OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication
 	//                   failure. After this method is the connection will be closed and the OnDisconnect method will be
