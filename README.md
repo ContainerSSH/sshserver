@@ -63,4 +63,8 @@ The handler interface consists of multiple parts:
 - The `SSHConnectionHandler` is responsible for handling an individual SSH connection. Most importantly, it is responsible for providing a `SessionChannelHandler` when a new session channel is requested by the client.
 - The `SessionChannelHandler` is responsible for an individual session channel (single program execution). It provides several hooks for setting up and running the program. Once the program execution is complete the channel is closed. You must, however, keep handling requests (e.g. window size change) during program execution.
 
-A sample implementation can be found in the [test code](integration_test.go) at the bottom of the file.
+A sample implementation can be found in the [test code](server_test.go) at the bottom of the file.
+
+## About the `connectionID`
+
+The `connectionID` parameter in the `OnNetworkConnection()` is a hexadecimal string uniquely identifying a connection. This ID can be used to track connection-related information across multiple subsystems (e.g. logs, audit logs, authentication and configuration requests, etc.)

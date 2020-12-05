@@ -1,6 +1,7 @@
 package sshserver
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net"
 	"sync"
@@ -163,13 +164,13 @@ func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionH
 
 func (s *server) handleConnection(conn net.Conn) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
-	connectionID, err := uuid.New().MarshalBinary()
+	connectionIDBinary, err := uuid.New().MarshalBinary()
 	if err != nil {
 		s.logger.Warningf("failed to generate unique connection ID for %s (%w)", addr.IP.String(), err)
 		_ = conn.Close()
 		return
 	}
-	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, connectionID)
+	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, hex.EncodeToString(connectionIDBinary))
 	if err != nil {
 		s.logger.Infoe(err)
 		_ = conn.Close()

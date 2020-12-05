@@ -25,7 +25,7 @@ type Handler interface {
 	//
 	// The ip parameter provides the IP address of the connecting user. The connectionID parameter provides an opaque
 	// binary identifier for the connection that can be used to track the connection across multiple subsystems.
-	OnNetworkConnection(client net.TCPAddr, connectionID []byte) (NetworkConnectionHandler, error)
+	OnNetworkConnection(client net.TCPAddr, connectionID string) (NetworkConnectionHandler, error)
 }
 
 // AuthResponse indicates the various response states for the authentication process.

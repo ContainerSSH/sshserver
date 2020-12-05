@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.7: Changing `connectionID`
+
+This release changes the `connectionID` parameter to a string. This better conveys that it is a printable string and can be safely used in filenames, etc.
+
 ## 0.9.6: OnHandshakeSuccess takes username
 
 With `0.9.6` we are introducing the `user` parameter to the `OnHandshakeSuccess()` method. This is done in preparation to supporting SSH connections without authentication.
