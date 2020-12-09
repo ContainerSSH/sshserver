@@ -75,6 +75,7 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 		}
 		go s.handleConnection(tcpConn)
 	}
+	lifecycle.Stopping()
 	allClientsExited := make(chan struct{})
 	shutdownHandlerExited := make(chan struct{}, 1)
 	go s.disconnectClients(lifecycle, allClientsExited)

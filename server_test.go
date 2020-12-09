@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -113,6 +114,8 @@ func TestSessionSuccess(t *testing.T) {
 		ssh.Password("bar"),
 		hostKey,
 		[]byte("Hi"),
+		nil,
+		nil,
 	)
 	assert.Equal(t, []byte("Hello world!"), reply)
 	assert.Equal(t, 0, exitStatus)
@@ -144,6 +147,8 @@ func TestSessionError(t *testing.T) {
 		ssh.Password("bar"),
 		hostKey,
 		[]byte("Ho"),
+		nil,
+		nil,
 	)
 	assert.Equal(t, 1, exitStatus)
 	assert.Equal(t, []byte{}, reply)
@@ -184,10 +189,57 @@ func TestPubKey(t *testing.T) {
 		ssh.PublicKeys(signer),
 		hostKey,
 		[]byte("Hi"),
+		nil,
+		nil,
 	)
 	assert.Nil(t, err, "failed to send shell request (%v)", err)
 	assert.Equal(t, 0, exitStatus)
 	assert.Equal(t, []byte("Hello world!"), reply)
+}
+
+func TestExitHandlingOnShutdown(t *testing.T) {
+	server := newServerHelper(
+		t,
+		"127.0.0.1:2222",
+		map[string][]byte{
+			"foo": []byte("bar"),
+		},
+		map[string]string{},
+	)
+	hostKey, err := server.start()
+	if err != nil {
+		assert.Fail(t, "failed to start ssh server", err)
+		return
+	}
+	defer server.stop()
+	shellChan := make(chan struct{})
+	responseChan := make(chan struct{})
+	server.lifecycle.OnStopping(
+		func(s service.Service, l service.Lifecycle, shutdownContext context.Context) {
+			responseChan <- struct{}{}
+		})
+	var reply []byte
+	var exitStatus int
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		reply, exitStatus, err = shellRequestReply(
+			"127.0.0.1:2222",
+			"foo",
+			ssh.Password("bar"),
+			hostKey,
+			[]byte("Hi"),
+			shellChan,
+			responseChan,
+		)
+		assert.Nil(t, err, "failed to send shell request (%v)", err)
+		assert.Equal(t, 0, exitStatus)
+		assert.Equal(t, []byte("Hello world!"), reply)
+	}()
+	<-shellChan
+	server.stop()
+	wg.Wait()
 }
 
 //endregion
@@ -200,6 +252,8 @@ func shellRequestReply(
 	authMethod ssh.AuthMethod,
 	hostKey []byte,
 	request []byte,
+	onShell chan struct{},
+	canSendResponse chan struct{},
 ) (reply []byte, exitStatus int, err error) {
 	sshConfig := &ssh.ClientConfig{
 		User: user,
@@ -233,6 +287,12 @@ func shellRequestReply(
 
 	if err := session.Shell(); err != nil {
 		return nil, -1, fmt.Errorf("failed to request shell (%w)", err)
+	}
+	if onShell != nil {
+		onShell <- struct{}{}
+	}
+	if canSendResponse != nil {
+		<-canSendResponse
 	}
 	if _, err := stdin.Write(request); err != nil {
 		return nil, -1, fmt.Errorf("failed to write to shell (%w)", err)
@@ -287,10 +347,11 @@ func newServerHelper(
 	pubKeys map[string]string,
 ) *serverHelper {
 	return &serverHelper{
-		t:         t,
-		listen:    listen,
-		passwords: passwords,
-		pubKeys:   pubKeys,
+		t:               t,
+		listen:          listen,
+		passwords:       passwords,
+		pubKeys:         pubKeys,
+		receivedChannel: make(chan struct{}, 1),
 	}
 }
 
@@ -302,6 +363,7 @@ type serverHelper struct {
 	pubKeys         map[string]string
 	listen          string
 	shutdownChannel chan struct{}
+	receivedChannel chan struct{}
 }
 
 func (h *serverHelper) start() (hostKey []byte, err error) {
@@ -348,7 +410,7 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 
 func (h *serverHelper) stop() {
 	if h.lifecycle != nil {
-		shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
 		h.lifecycle.Stop(shutdownContext)
 		cancelFunc()
 	}
