@@ -1,7 +1,6 @@
 package sshserver
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net"
 	"strings"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/containerssh/log"
 	"github.com/containerssh/service"
-	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -23,6 +21,7 @@ type server struct {
 	clientSockets       map[*ssh.ServerConn]bool
 	nextGlobalRequestID uint64
 	nextChannelID       uint64
+	hostKeys            []ssh.Signer
 }
 
 func (s *server) String() string {
@@ -159,7 +158,7 @@ func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionH
 		ServerVersion:     s.cfg.ServerVersion,
 		BannerCallback:    func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
 	}
-	for _, key := range s.cfg.HostKeys {
+	for _, key := range s.hostKeys {
 		serverConfig.AddHostKey(key)
 	}
 	return serverConfig
@@ -167,13 +166,7 @@ func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionH
 
 func (s *server) handleConnection(conn net.Conn) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
-	connectionIDBinary, err := uuid.New().MarshalBinary()
-	if err != nil {
-		s.logger.Warningf("failed to generate unique connection ID for %s (%w)", addr.IP.String(), err)
-		_ = conn.Close()
-		return
-	}
-	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, hex.EncodeToString(connectionIDBinary))
+	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, GenerateConnectionID())
 	if err != nil {
 		s.logger.Infoe(err)
 		_ = conn.Close()

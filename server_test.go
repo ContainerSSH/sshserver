@@ -72,7 +72,8 @@ func TestAuthFailed(t *testing.T) {
 		Auth: []ssh.AuthMethod{ssh.Password("invalid")},
 	}
 	sshConfig.HostKeyCallback = func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		if bytes.Equal(key.Marshal(), hostKey) {
+		marshaledKey := key.Marshal()
+		if bytes.Equal(marshaledKey, hostKey) {
 			return nil
 		}
 		return fmt.Errorf("invalid host")
@@ -375,7 +376,11 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 	if err := config.GenerateHostKey(); err != nil {
 		return nil, err
 	}
-	hostKey = config.HostKeys[0].PublicKey().Marshal()
+	private, err := ssh.ParsePrivateKey([]byte(config.HostKeys[0]))
+	if err != nil {
+		return nil, err
+	}
+	hostKey = private.PublicKey().Marshal()
 	logger := standard.New()
 	readyChannel := make(chan struct{}, 1)
 	h.shutdownChannel = make(chan struct{}, 1)
