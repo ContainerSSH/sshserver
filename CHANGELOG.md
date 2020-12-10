@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.9: Configuration structure now accepts strings instead of ssh.Signer
+          
+This change replaces the host keys configuration parameter ([]ssh.Signer) with a slice of strings. This is done to preserve the file-based host keys when a configuration structure needs to be saved later.
+
 ## 0.9.8: Changing the pubKey authenticator to use the authorized key format
 
 In this release we are changing the `OnAuthPubKey` method of the `NetworkConnectionHandler` interface to receive a `string` instead of a `[]byte` for the pubkey. The SSH server implementation now passes the SSH key in the [OpenSSH authorized key format](https://en.wikibooks.org/wiki/OpenSSH/Client_Configuration_Files#~/.ssh/authorized_keys) to make it easier for implementers to match the key.
