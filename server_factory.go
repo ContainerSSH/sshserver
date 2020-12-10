@@ -11,6 +11,10 @@ func New(cfg Config, handler Handler, logger log.Logger) (Server, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	hostKeys, err := cfg.LoadHostKeys()
+	if err != nil {
+		return nil, err
+	}
 	return &server{
 		cfg:          cfg,
 		handler:      handler,
@@ -18,5 +22,6 @@ func New(cfg Config, handler Handler, logger log.Logger) (Server, error) {
 		wg:           &sync.WaitGroup{},
 		lock:         &sync.Mutex{},
 		listenSocket: nil,
+		hostKeys:     hostKeys,
 	}, nil
 }
