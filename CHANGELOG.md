@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.11: Exec request bug
+
+This release fixes a bug where Exec requests would be rejected due to faulty refactoring in the previous release.
+
+Currently, there is no test for this scenario, but later on, a full test suite for supported SSH requests is desired.
+
 ## 0.9.10: Bugfixing request decoding
 
 In the previous versions of this library the fields in the structures related to SSH requests (e.g. env) were not exported. This caused the ssh unmarshal to fail, but this was not tested previously. We have now changed the fields to be exported and sending requests has now been added to the test scope. More test cases are desirable in future.
