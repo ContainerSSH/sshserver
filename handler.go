@@ -153,12 +153,12 @@ type SessionChannelHandler interface {
 	//              return an error to reject the request.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
-	// term is the terminal name. This is usually set in the TERM environment variable.
-	// columns is the number of columns in the terminal.
-	// rows is the number of rows in the terminal.
-	// width is the width of the terminal in pixels.
-	// height is the height of a terminal in pixels.
-	// modelist are the encoded terminal modes the client desires. See RFC4254 section 8 and RFC8160 for details.
+	// Term is the terminal Name. This is usually set in the TERM environment variable.
+	// Columns is the number of Columns in the terminal.
+	// Rows is the number of Rows in the terminal.
+	// Width is the Width of the terminal in pixels.
+	// Height is the Height of a terminal in pixels.
+	// ModeList are the encoded terminal modes the client desires. See RFC4254 section 8 and RFC8160 for details.
 	OnPtyRequest(
 		requestID uint64,
 		term string,
@@ -177,7 +177,7 @@ type SessionChannelHandler interface {
 	//               to reject the request.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
-	// program is the name of the program to be executed.
+	// program is the Name of the program to be executed.
 	// stdin is a reader for the shell or program to read the stdin.
 	// stdout is a writer for the shell or program standard output.
 	// stderr is a writer for the shell or program standard error.
@@ -208,7 +208,7 @@ type SessionChannelHandler interface {
 		onExit func(exitStatus ExitStatus),
 	) error
 
-	// OnSubsystem is called when the client calls a well-known subsystem (e.g. sftp). The implementation can return an
+	// OnSubsystem is called when the client calls a well-known Subsystem (e.g. sftp). The implementation can return an
 	//             error to reject the request. The implementation should send the IO handling into background. It
 	//             should also respect the shutdown context on the Handler.
 	//
@@ -230,7 +230,7 @@ type SessionChannelHandler interface {
 
 	//region Requests during program execution
 
-	// OnSignal is called when the client requests a signal to be sent to the running process. The implementation can
+	// OnSignal is called when the client requests a Signal to be sent to the running process. The implementation can
 	//          return an error to reject the request.
 	OnSignal(
 		requestID uint64,
@@ -241,10 +241,10 @@ type SessionChannelHandler interface {
 	//          after a program is started. The implementation can return an error to reject the request.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
-	// columns is the number of columns in the terminal.
-	// rows is the number of rows in the terminal.
-	// width is the width of the terminal in pixels.
-	// height is the height of a terminal in pixels.
+	// Columns is the number of Columns in the terminal.
+	// Rows is the number of Rows in the terminal.
+	// Width is the Width of the terminal in pixels.
+	// Height is the Height of a terminal in pixels.
 	OnWindow(
 		requestID uint64,
 		columns uint32,

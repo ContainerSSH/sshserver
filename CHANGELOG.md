@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.10: Bugfixing request decoding
+
+In the previous versions of this library the fields in the structures related to SSH requests (e.g. env) were not exported. This caused the ssh unmarshal to fail, but this was not tested previously. We have now changed the fields to be exported and sending requests has now been added to the test scope. More test cases are desirable in future.
+
 ## 0.9.9: Configuration structure now accepts strings instead of ssh.Signer
           
 This change replaces the host keys configuration parameter ([]ssh.Signer) with a slice of strings. This is done to preserve the file-based host keys when a configuration structure needs to be saved later.

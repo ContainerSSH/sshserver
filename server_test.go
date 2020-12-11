@@ -286,6 +286,10 @@ func shellRequestReply(
 		return nil, -1, err
 	}
 
+	if err := session.Setenv("TERM", "xterm"); err != nil {
+		return nil, -1, err
+	}
+
 	if err := session.Shell(); err != nil {
 		return nil, -1, fmt.Errorf("failed to request shell (%w)", err)
 	}
@@ -572,7 +576,7 @@ func (f *fullSessionChannelHandler) OnEnvRequest(_ uint64, name string, value st
 func (f *fullSessionChannelHandler) OnExecRequest(
 	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
 ) error {
-	return fmt.Errorf("this server does not support exec")
+	return fmt.Errorf("this server does not support Exec")
 }
 
 func (f *fullSessionChannelHandler) OnPtyRequest(
@@ -611,7 +615,7 @@ func (f *fullSessionChannelHandler) OnSignal(_ uint64, _ string) error {
 func (f *fullSessionChannelHandler) OnSubsystem(
 	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
 ) error {
-	return fmt.Errorf("subsystem not supported")
+	return fmt.Errorf("Subsystem not supported")
 }
 
 func (f *fullSessionChannelHandler) OnWindow(_ uint64, _ uint32, _ uint32, _ uint32, _ uint32) error {
