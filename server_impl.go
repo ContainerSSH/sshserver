@@ -284,7 +284,7 @@ const (
 	requestTypeEnv       requestType = "env"
 	requestTypePty       requestType = "pty"
 	requestTypeShell     requestType = "shell"
-	requestTypeExec      requestType = "Exec"
+	requestTypeExec      requestType = "exec"
 	requestTypeSubsystem requestType = "Subsystem"
 	requestTypeWindow    requestType = "window-change"
 	requestTypeSignal    requestType = "Signal"
