@@ -239,39 +239,39 @@ func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHCo
 }
 
 type envRequestPayload struct {
-	name  string
-	value string
+	Name  string
+	Value string
 }
 
 type execRequestPayload struct {
-	exec string
+	Exec string
 }
 
 type ptyRequestPayload struct {
-	term     string
-	columns  uint32
-	rows     uint32
-	width    uint32
-	height   uint32
-	modelist []byte
+	Term     string
+	Columns  uint32
+	Rows     uint32
+	Width    uint32
+	Height   uint32
+	ModeList []byte
 }
 
 type shellRequestPayload struct {
 }
 
 type signalRequestPayload struct {
-	signal string
+	Signal string
 }
 
 type subsystemRequestPayload struct {
-	subsystem string
+	Subsystem string
 }
 
 type windowRequestPayload struct {
-	columns uint32
-	rows    uint32
-	width   uint32
-	height  uint32
+	Columns uint32
+	Rows    uint32
+	Width   uint32
+	Height  uint32
 }
 
 type exitStatusPayload struct {
@@ -284,10 +284,10 @@ const (
 	requestTypeEnv       requestType = "env"
 	requestTypePty       requestType = "pty"
 	requestTypeShell     requestType = "shell"
-	requestTypeExec      requestType = "exec"
-	requestTypeSubsystem requestType = "subsystem"
+	requestTypeExec      requestType = "Exec"
+	requestTypeSubsystem requestType = "Subsystem"
 	requestTypeWindow    requestType = "window-change"
-	requestTypeSignal    requestType = "signal"
+	requestTypeSignal    requestType = "Signal"
 )
 
 func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
@@ -447,20 +447,20 @@ func (s *server) handleDecodedChannelRequest(
 func (s *server) onEnvRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnEnvRequest(
 		requestID,
-		payload.(envRequestPayload).name,
-		payload.(envRequestPayload).value,
+		payload.(envRequestPayload).Name,
+		payload.(envRequestPayload).Value,
 	)
 }
 
 func (s *server) onPtyRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnPtyRequest(
 		requestID,
-		payload.(ptyRequestPayload).term,
-		payload.(ptyRequestPayload).columns,
-		payload.(ptyRequestPayload).rows,
-		payload.(ptyRequestPayload).width,
-		payload.(ptyRequestPayload).height,
-		payload.(ptyRequestPayload).modelist,
+		payload.(ptyRequestPayload).Term,
+		payload.(ptyRequestPayload).Columns,
+		payload.(ptyRequestPayload).Rows,
+		payload.(ptyRequestPayload).Width,
+		payload.(ptyRequestPayload).Height,
+		payload.(ptyRequestPayload).ModeList,
 	)
 }
 
@@ -477,7 +477,7 @@ func (s *server) onShell(requestID uint64, sessionChannel SessionChannelHandler,
 func (s *server) onExec(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
 	return sessionChannel.OnExecRequest(
 		requestID,
-		payload.(execRequestPayload).exec,
+		payload.(execRequestPayload).Exec,
 		channel,
 		channel,
 		channel.Stderr(),
@@ -488,14 +488,14 @@ func (s *server) onExec(requestID uint64, sessionChannel SessionChannelHandler, 
 func (s *server) onSignal(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnSignal(
 		requestID,
-		payload.(signalRequestPayload).signal,
+		payload.(signalRequestPayload).Signal,
 	)
 }
 
 func (s *server) onSubsystem(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
 	return sessionChannel.OnSubsystem(
 		requestID,
-		payload.(subsystemRequestPayload).subsystem,
+		payload.(subsystemRequestPayload).Subsystem,
 		channel,
 		channel,
 		channel.Stderr(),
@@ -506,10 +506,10 @@ func (s *server) onSubsystem(requestID uint64, sessionChannel SessionChannelHand
 func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnWindow(
 		requestID,
-		payload.(windowRequestPayload).columns,
-		payload.(windowRequestPayload).rows,
-		payload.(windowRequestPayload).width,
-		payload.(windowRequestPayload).height,
+		payload.(windowRequestPayload).Columns,
+		payload.(windowRequestPayload).Rows,
+		payload.(windowRequestPayload).Width,
+		payload.(windowRequestPayload).Height,
 	)
 }
 
