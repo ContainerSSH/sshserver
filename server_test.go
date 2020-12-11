@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/containerssh/log/standard"
+	"github.com/containerssh/log"
 	"github.com/containerssh/service"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
@@ -30,7 +31,15 @@ func TestReadyRejection(t *testing.T) {
 		assert.Fail(t, "failed to generate host key", err)
 		return
 	}
-	logger := standard.New()
+	logger, err := log.New(
+		log.Config{
+			Level:  log.LevelDebug,
+			Format: log.FormatText,
+		},
+		"ssh",
+		os.Stdout,
+	)
+	assert.NoError(t, err)
 	handler := &rejectHandler{}
 
 	server, err := sshserver.New(config, handler, logger)
@@ -385,7 +394,17 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 		return nil, err
 	}
 	hostKey = private.PublicKey().Marshal()
-	logger := standard.New()
+	logger, err := log.New(
+		log.Config{
+			Level:  log.LevelDebug,
+			Format: log.FormatText,
+		},
+		"ssh",
+		os.Stdout,
+	)
+	if err != nil {
+		return nil, err
+	}
 	readyChannel := make(chan struct{}, 1)
 	h.shutdownChannel = make(chan struct{}, 1)
 	errChannel := make(chan error, 1)
