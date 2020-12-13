@@ -174,7 +174,7 @@ type SessionChannelHandler interface {
 	//region Program execution
 
 	// OnExecRequest is called when the client request a program to be executed. The implementation can return an error
-	//               to reject the request.
+	//               to reject the request. This method MUST NOT block beyond initializing the program.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// program is the Name of the program to be executed.
@@ -193,7 +193,7 @@ type SessionChannelHandler interface {
 
 	// OnShell is called when the client requests a shell to be started. The implementation can return an error to
 	//         reject the request. The implementation should send the IO handling into background. It should also
-	//         respect the shutdown context on the Handler.
+	//         respect the shutdown context on the Handler. This method MUST NOT block beyond initializing the shell.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// stdin is a reader for the shell or program to read the stdin.
@@ -210,7 +210,8 @@ type SessionChannelHandler interface {
 
 	// OnSubsystem is called when the client calls a well-known Subsystem (e.g. sftp). The implementation can return an
 	//             error to reject the request. The implementation should send the IO handling into background. It
-	//             should also respect the shutdown context on the Handler.
+	//             should also respect the shutdown context on the Handler. This method MUST NOT block beyond
+	//             initializing the subsystem.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// stdin is a reader for the shell or program to read the stdin.

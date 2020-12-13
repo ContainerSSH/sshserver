@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.13: Fixed race condition on channel requests
+
+The previous version of this library would handle channel requests in parallel goroutines. This would sometimes lead to shell/exec/subsystem requests being processed before PTY requests. This release changes that and requests are now always processed in order.
+
 ## 0.9.12: Moving the OnHandshakeSuccessful handler to authentication
 
 This change moves the call to OnHandshakeSuccessful before sending the "auth success" message to the client.
