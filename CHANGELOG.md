@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.14: Fixed incorrect request types
+
+In the previous version the SSH server would listen for several incorrect request types, for example PTY, signals, and subsystems. These are now fixed.
+
 ## 0.9.13: Fixed race condition on channel requests
 
 The previous version of this library would handle channel requests in parallel goroutines. This would sometimes lead to shell/exec/subsystem requests being processed before PTY requests. This release changes that and requests are now always processed in order.
