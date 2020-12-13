@@ -344,7 +344,7 @@ func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChanne
 		}
 		requestID := nextRequestID
 		nextRequestID++
-		go s.handleChannelRequest(requestID, request, channel, handlerChannel)
+		s.handleChannelRequest(requestID, request, channel, handlerChannel)
 	}
 }
 
