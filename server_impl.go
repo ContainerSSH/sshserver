@@ -144,24 +144,56 @@ func (s *server) createPubKeyAuthenticator(
 	}
 }
 
-func (s *server) createConfiguration(handlerNetworkConnection NetworkConnectionHandler) *ssh.ServerConfig {
+func (s *server) createConfiguration(handlerNetworkConnection *networkConnectionWrapper) *ssh.ServerConfig {
+	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection)
+	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection)
 	serverConfig := &ssh.ServerConfig{
 		Config: ssh.Config{
 			KeyExchanges: s.cfg.getKex(),
 			Ciphers:      s.cfg.getCiphers(),
 			MACs:         s.cfg.getMACs(),
 		},
-		NoClientAuth:      false,
-		MaxAuthTries:      6,
-		PasswordCallback:  s.createPasswordAuthenticator(handlerNetworkConnection),
-		PublicKeyCallback: s.createPubKeyAuthenticator(handlerNetworkConnection),
-		ServerVersion:     s.cfg.ServerVersion,
-		BannerCallback:    func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
+		NoClientAuth: false,
+		MaxAuthTries: 6,
+		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+			permissions, err := passwordHandler(conn, password)
+			if err != nil {
+				return permissions, err
+			}
+			// HACK: check HACKS.md "OnHandshakeSuccess handler"
+			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+			if err != nil {
+				return permissions, err
+			}
+			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+			return permissions, err
+		},
+		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+			permissions, err := pubKeyHandler(conn, key)
+			if err != nil {
+				return permissions, err
+			}
+			// HACK: check HACKS.md "OnHandshakeSuccess handler"
+			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+			if err != nil {
+				return permissions, err
+			}
+			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+			return permissions, err
+		},
+		ServerVersion:  s.cfg.ServerVersion,
+		BannerCallback: func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
 	}
 	for _, key := range s.hostKeys {
 		serverConfig.AddHostKey(key)
 	}
 	return serverConfig
+}
+
+// HACK: check HACKS.md "OnHandshakeSuccess handler"
+type networkConnectionWrapper struct {
+	NetworkConnectionHandler
+	sshConnectionHandler SSHConnectionHandler
 }
 
 func (s *server) handleConnection(conn net.Conn) {
@@ -174,7 +206,12 @@ func (s *server) handleConnection(conn net.Conn) {
 	}
 	s.logger.Debugf("client connected: %s", addr.IP.String())
 
-	sshConn, channels, globalRequests, err := ssh.NewServerConn(conn, s.createConfiguration(handlerNetworkConnection))
+	// HACK: check HACKS.md "OnHandshakeSuccess handler"
+	wrapper := networkConnectionWrapper{
+		NetworkConnectionHandler: handlerNetworkConnection,
+	}
+
+	sshConn, channels, globalRequests, err := ssh.NewServerConn(conn, s.createConfiguration(&wrapper))
 	if err != nil {
 		s.logger.Debugf("SSH handshake failed for %s (%v)", addr.IP.String(), err)
 		handlerNetworkConnection.OnHandshakeFailed(err)
@@ -192,12 +229,8 @@ func (s *server) handleConnection(conn net.Conn) {
 		handlerNetworkConnection.OnDisconnect()
 		s.wg.Done()
 	}()
-	handlerSSHConnection, failureReason := handlerNetworkConnection.OnHandshakeSuccess(sshConn.User())
-	if failureReason != nil {
-		s.logger.Debugf("handshake success handler returned with error (%v)", err)
-		// No need to close connection, already closed.
-		return
-	}
+	// HACK: check HACKS.md "OnHandshakeSuccess handler"
+	handlerSSHConnection := wrapper.sshConnectionHandler
 	go s.handleChannels(channels, handlerSSHConnection)
 	go s.handleGlobalRequests(globalRequests, handlerSSHConnection)
 }
