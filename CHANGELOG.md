@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.12: Moving the OnHandshakeSuccessful handler to authentication
+
+This change moves the call to OnHandshakeSuccessful before sending the "auth success" message to the client.
+
+This is required because we noticed that clients would immediately start sending requests (e.g. PTY requests) to the server while the container backend is still initializing. If the container initialization takes too long the PTY request would be considered failed by the client resulting in the error message "PTY allocation request failed on channel 0". By delaying sending the authentication response to the client we can make sure the container backend has ample time to start up the container.
+
 ## 0.9.11: Exec request bug
 
 This release fixes a bug where Exec requests would be rejected due to faulty refactoring in the previous release.
