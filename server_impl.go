@@ -315,12 +315,12 @@ type requestType string
 
 const (
 	requestTypeEnv       requestType = "env"
-	requestTypePty       requestType = "pty"
+	requestTypePty       requestType = "pty-req"
 	requestTypeShell     requestType = "shell"
 	requestTypeExec      requestType = "exec"
-	requestTypeSubsystem requestType = "Subsystem"
+	requestTypeSubsystem requestType = "subsystem"
 	requestTypeWindow    requestType = "window-change"
-	requestTypeSignal    requestType = "Signal"
+	requestTypeSignal    requestType = "signal"
 )
 
 func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
