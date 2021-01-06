@@ -66,6 +66,11 @@ type NetworkConnectionHandler interface {
 
 	// OnDisconnect is called when the network connection is closed.
 	OnDisconnect()
+
+	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
+	//            for the shutdown, after which the server should abort all running connections and return as fast as
+	//            possible.
+	OnShutdown(shutdownContext context.Context)
 }
 
 // ChannelRejection is an error type that also contains a Message and a Reason
@@ -102,6 +107,11 @@ type SSHConnectionHandler interface {
 	// channelID is an ID uniquely identifying the channel within the connection.
 	// extraData contains the binary extra data submitted by the client. This is usually empty.
 	OnSessionChannel(channelID uint64, extraData []byte) (channel SessionChannelHandler, failureReason ChannelRejection)
+
+	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
+	//            for the shutdown, after which the server should abort all running connections and return as fast as
+	//            possible.
+	OnShutdown(shutdownContext context.Context)
 }
 
 // ExitStatus contains the status code with which the program exited.
@@ -110,6 +120,11 @@ type ExitStatus uint32
 
 // SessionChannelHandler is a channel of the "session" type used for interactive and non-interactive sessions
 type SessionChannelHandler interface {
+	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
+	//            for the shutdown, after which the server should abort all running connections and return as fast as
+	//            possible.
+	OnShutdown(shutdownContext context.Context)
+
 	//region Channel request initialization
 
 	// OnUnsupportedChannelRequest captures channel requests of unsupported types.

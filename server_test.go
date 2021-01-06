@@ -252,6 +252,10 @@ func TestExitHandlingOnShutdown(t *testing.T) {
 	wg.Wait()
 }
 
+func TestExitHandlingWithExistingConnection(t *testing.T) {
+
+}
+
 //endregion
 
 //region Helper
@@ -521,6 +525,10 @@ type fullNetworkConnectionHandler struct {
 	handler *fullHandler
 }
 
+func (f *fullNetworkConnectionHandler) OnShutdown(_ context.Context) {
+
+}
+
 func (f *fullNetworkConnectionHandler) OnAuthPassword(username string, password []byte) (response sshserver.AuthResponse, reason error) {
 	if storedPassword, ok := f.handler.passwords[username]; ok && bytes.Equal(storedPassword, password) {
 		return sshserver.AuthResponseSuccess, nil
@@ -557,6 +565,10 @@ type fullSSHConnectionHandler struct {
 	handler *fullHandler
 }
 
+func (f *fullSSHConnectionHandler) OnShutdown(_ context.Context) {
+
+}
+
 func (f *fullSSHConnectionHandler) OnUnsupportedGlobalRequest(_ uint64, _ string, _ []byte) {
 
 }
@@ -579,6 +591,7 @@ func (f *fullSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte) (channel
 type fullSessionChannelHandler struct {
 	handler *fullHandler
 	env     map[string]string
+	stdin   io.Reader
 }
 
 func (f *fullSessionChannelHandler) OnUnsupportedChannelRequest(_ uint64, _ string, _ []byte) {
@@ -608,6 +621,7 @@ func (f *fullSessionChannelHandler) OnShell(
 	_ uint64, stdin io.Reader, stdout io.Writer, _ io.Writer, onExit func(exitStatus sshserver.ExitStatus),
 ) error {
 	go func() {
+		f.stdin = stdin
 		data := make([]byte, 4096)
 		n, err := stdin.Read(data)
 		if err != nil {
@@ -634,11 +648,18 @@ func (f *fullSessionChannelHandler) OnSignal(_ uint64, _ string) error {
 func (f *fullSessionChannelHandler) OnSubsystem(
 	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
 ) error {
-	return fmt.Errorf("Subsystem not supported")
+	return fmt.Errorf("subsystem not supported")
 }
 
 func (f *fullSessionChannelHandler) OnWindow(_ uint64, _ uint32, _ uint32, _ uint32, _ uint32) error {
 	return nil
+}
+
+func (f *fullSessionChannelHandler) OnShutdown(_ context.Context) {
+	if f.stdin != nil {
+		// HACK: close stdin to trigger a stop.
+		_ = f.stdin.(io.Closer).Close()
+	}
 }
 
 //endregion

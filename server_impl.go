@@ -1,7 +1,10 @@
 package sshserver
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -22,6 +25,8 @@ type server struct {
 	nextGlobalRequestID uint64
 	nextChannelID       uint64
 	hostKeys            []ssh.Signer
+	shutdownHandlers    *shutdownRegistry
+	shuttingDown        bool
 }
 
 func (s *server) String() string {
@@ -36,6 +41,7 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	} else {
 		s.clientSockets = make(map[*ssh.ServerConn]bool)
 	}
+	s.shuttingDown = false
 	s.lock.Unlock()
 
 	if alreadyRunning {
@@ -75,8 +81,10 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 		go s.handleConnection(tcpConn)
 	}
 	lifecycle.Stopping()
+	s.shuttingDown = true
 	allClientsExited := make(chan struct{})
 	shutdownHandlerExited := make(chan struct{}, 1)
+	go s.shutdownHandlers.Shutdown(lifecycle.ShutdownContext())
 	go s.disconnectClients(lifecycle, allClientsExited)
 	go s.shutdownHandler(lifecycle, shutdownHandlerExited)
 
@@ -95,13 +103,7 @@ func (s *server) disconnectClients(lifecycle service.Lifecycle, allClientsExited
 
 	s.lock.Lock()
 	for serverSocket := range s.clientSockets {
-		if err := serverSocket.Close(); err != nil {
-			s.logger.Debugf(
-				"failed to close client socket for %s (%v)",
-				serverSocket.RemoteAddr().String(),
-				err,
-			)
-		}
+		_ = serverSocket.Close()
 	}
 	s.clientSockets = map[*ssh.ServerConn]bool{}
 	s.lock.Unlock()
@@ -196,14 +198,22 @@ type networkConnectionWrapper struct {
 	sshConnectionHandler SSHConnectionHandler
 }
 
+func (n *networkConnectionWrapper) OnShutdown(shutdownContext context.Context) {
+
+	go n.sshConnectionHandler.OnShutdown(shutdownContext)
+}
+
 func (s *server) handleConnection(conn net.Conn) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
-	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, GenerateConnectionID())
+	connectionID := GenerateConnectionID()
+	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, connectionID)
 	if err != nil {
 		s.logger.Infoe(err)
 		_ = conn.Close()
 		return
 	}
+	shutdownHandlerID := fmt.Sprintf("network-%s", connectionID)
+	s.shutdownHandlers.Register(shutdownHandlerID, handlerNetworkConnection)
 	s.logger.Debugf("client connected: %s", addr.IP.String())
 
 	// HACK: check HACKS.md "OnHandshakeSuccess handler"
@@ -215,23 +225,30 @@ func (s *server) handleConnection(conn net.Conn) {
 	if err != nil {
 		s.logger.Debugf("SSH handshake failed for %s (%v)", addr.IP.String(), err)
 		handlerNetworkConnection.OnHandshakeFailed(err)
+		s.shutdownHandlers.Unregister(shutdownHandlerID)
 		handlerNetworkConnection.OnDisconnect()
 		_ = conn.Close()
 		return
 	}
 	s.lock.Lock()
 	s.clientSockets[sshConn] = true
+	sshShutdownHandlerID := fmt.Sprintf("ssh-%s", connectionID)
 	s.lock.Unlock()
+
 	s.wg.Add(1)
 	go func() {
 		_ = sshConn.Wait()
 		s.logger.Debugf("client disconnected: %s", addr.IP.String())
+		s.shutdownHandlers.Unregister(shutdownHandlerID)
+		s.shutdownHandlers.Unregister(sshShutdownHandlerID)
 		handlerNetworkConnection.OnDisconnect()
 		s.wg.Done()
 	}()
 	// HACK: check HACKS.md "OnHandshakeSuccess handler"
 	handlerSSHConnection := wrapper.sshConnectionHandler
-	go s.handleChannels(channels, handlerSSHConnection)
+	s.shutdownHandlers.Register(sshShutdownHandlerID, handlerSSHConnection)
+
+	go s.handleChannels(connectionID, channels, handlerSSHConnection)
 	go s.handleGlobalRequests(globalRequests, handlerSSHConnection)
 }
 
@@ -252,7 +269,7 @@ func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection S
 	}
 }
 
-func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHConnectionHandler) {
+func (s *server) handleChannels(connectionID string, channels <-chan ssh.NewChannel, connection SSHConnectionHandler) {
 	for {
 		newChannel, ok := <-channels
 		if !ok {
@@ -267,7 +284,7 @@ func (s *server) handleChannels(channels <-chan ssh.NewChannel, connection SSHCo
 			}
 			continue
 		}
-		go s.handleSessionChannel(channelID, newChannel, connection)
+		go s.handleSessionChannel(connectionID, channelID, newChannel, connection)
 	}
 }
 
@@ -323,7 +340,7 @@ const (
 	requestTypeSignal    requestType = "signal"
 )
 
-func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
+func (s *server) handleSessionChannel(connectionID string, channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
 	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData())
 	if rejection != nil {
 		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
@@ -331,6 +348,8 @@ func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChanne
 		}
 		return
 	}
+	shutdownHandlerID := fmt.Sprintf("session-%s-%d", connectionID, channelID)
+	s.shutdownHandlers.Register(shutdownHandlerID, handlerChannel)
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
 		s.logger.Debugf("failed to accept session channel (%v)", err)
@@ -344,7 +363,7 @@ func (s *server) handleSessionChannel(channelID uint64, newChannel ssh.NewChanne
 		}
 		requestID := nextRequestID
 		nextRequestID++
-		s.handleChannelRequest(requestID, request, channel, handlerChannel)
+		s.handleChannelRequest(shutdownHandlerID, requestID, request, channel, handlerChannel)
 	}
 }
 
@@ -400,7 +419,7 @@ func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, er
 	}
 }
 
-func (s *server) handleChannelRequest(requestID uint64, request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
+func (s *server) handleChannelRequest(shutdownHandlerID string, requestID uint64, request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
 			if err := request.Reply(
@@ -412,16 +431,21 @@ func (s *server) handleChannelRequest(requestID uint64, request *ssh.Request, ss
 		}
 	}
 	onExit := func(exitCode ExitStatus) {
+		s.shutdownHandlers.Unregister(shutdownHandlerID)
 		if _, err := sshChannel.SendRequest(
 			"exit-status",
 			false,
 			ssh.Marshal(exitStatusPayload{
 				exitStatus: exitCode,
 			})); err != nil {
-			s.logger.Debugf("failed to send exit status to client (%v)", err)
+			if !errors.Is(err, io.EOF) {
+				s.logger.Debugf("failed to send exit status to client (%v)", err)
+			}
 		}
 		if err := sshChannel.Close(); err != nil {
-			s.logger.Debugf("failed to close SSH channel (%v)", err)
+			if !errors.Is(err, io.EOF) {
+				s.logger.Debugf("failed to close SSH channel (%v)", err)
+			}
 		}
 	}
 	payload, err := s.unmarshalPayload(request)
@@ -549,4 +573,40 @@ func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandle
 func (s *server) shutdownHandler(lifecycle service.Lifecycle, exited chan struct{}) {
 	s.handler.OnShutdown(lifecycle.ShutdownContext())
 	exited <- struct{}{}
+}
+
+type shutdownHandler interface {
+	OnShutdown(shutdownContext context.Context)
+}
+
+type shutdownRegistry struct {
+	lock      *sync.Mutex
+	callbacks map[string]shutdownHandler
+}
+
+func (s *shutdownRegistry) Register(key string, handler shutdownHandler) {
+	s.lock.Lock()
+	s.callbacks[key] = handler
+	s.lock.Unlock()
+}
+
+func (s *shutdownRegistry) Unregister(key string) {
+	s.lock.Lock()
+	delete(s.callbacks, key)
+	s.lock.Unlock()
+}
+
+func (s *shutdownRegistry) Shutdown(shutdownContext context.Context) {
+	wg := &sync.WaitGroup{}
+	s.lock.Lock()
+	wg.Add(len(s.callbacks))
+	for _, handler := range s.callbacks {
+		h := handler
+		go func() {
+			defer wg.Done()
+			h.OnShutdown(shutdownContext)
+		}()
+	}
+	s.lock.Unlock()
+	wg.Wait()
 }

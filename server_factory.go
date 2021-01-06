@@ -23,5 +23,9 @@ func New(cfg Config, handler Handler, logger log.Logger) (Server, error) {
 		lock:         &sync.Mutex{},
 		listenSocket: nil,
 		hostKeys:     hostKeys,
+		shutdownHandlers: &shutdownRegistry{
+			lock:      &sync.Mutex{},
+			callbacks: map[string]shutdownHandler{},
+		},
 	}, nil
 }
