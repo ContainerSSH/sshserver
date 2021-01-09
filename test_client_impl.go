@@ -39,7 +39,7 @@ func (t *testClient) Connect() (TestClientConnection, error) {
 	}
 
 	return &testClientConnection{
-		logger: t.logger,
+		logger:        t.logger,
 		sshConnection: sshConnection,
 	}, nil
 }
@@ -100,16 +100,53 @@ type testClientSession struct {
 	stdout   *syncContextPipe
 	exitCode int
 	logger   log.Logger
+	pty      bool
+}
+
+func (t *testClientSession) ReadRemaining() {
+	t.logger.Debugf("Reading reaining bytes from stdout...")
+	for {
+		data := make([]byte, 1024)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := t.stdout.ReadCtx(ctx, data)
+		if err != nil {
+			return
+		}
+	}
+}
+
+func (t *testClientSession) ReadRemainingStderr() {
+	t.logger.Debugf("Reading reaining bytes from stderr...")
+	for {
+		data := make([]byte, 1024)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := t.stderr.ReadCtx(ctx, data)
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (t *testClientSession) Type(data []byte) error {
+	t.logger.Debugf("Typing on stdin with sleep and readback: %s", data)
 	for _, b := range data {
 		_, err := t.Write([]byte{b})
 		if err != nil {
 			return err
 		}
+		readBack := make([]byte, 1)
+		n, err := t.Read(readBack)
+		if err != nil {
+			return err
+		}
+		if n != 1 {
+			return fmt.Errorf("failed to read back typed byte")
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	t.logger.Debugf("Typing done.")
 	return nil
 }
 
@@ -168,26 +205,39 @@ func (t *testClientSession) SetEnv(name string, value string) error {
 
 func (t *testClientSession) Window(cols int, rows int) error {
 	t.logger.Debugf("Changing window to cols %d rows %d...", cols, rows)
-	return t.session.WindowChange(cols, rows)
+	return t.session.WindowChange(rows, cols)
 }
 
 func (t *testClientSession) RequestPTY(term string, cols int, rows int) error {
 	t.logger.Debugf("Requesting PTY for term %s cols %d rows %d...", term, cols, rows)
-	return t.session.RequestPty(term, cols, rows, ssh.TerminalModes{})
+	if err := t.session.RequestPty(term, rows, cols, ssh.TerminalModes{}); err != nil {
+		return err
+	}
+	t.pty = true
+	return nil
 }
 
 func (t *testClientSession) Shell() error {
 	t.logger.Debugf("Executing shell...")
+	if t.pty {
+		t.session.Stderr = nil
+	}
 	return t.session.Shell()
 }
 
 func (t *testClientSession) Exec(program string) error {
 	t.logger.Debugf("Executing program '%s'...", program)
+	if t.pty {
+		t.session.Stderr = nil
+	}
 	return t.session.Start(program)
 }
 
 func (t *testClientSession) Subsystem(name string) error {
 	t.logger.Debugf("Requesting subsystem %s...", name)
+	if t.pty {
+		t.session.Stderr = nil
+	}
 	return t.session.RequestSubsystem(name)
 }
 
@@ -212,6 +262,9 @@ func (t *testClientSession) ReadCtx(ctx context.Context, data []byte) (int, erro
 }
 
 func (t *testClientSession) WaitForStdout(ctx context.Context, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
 	t.logger.Debugf("Waiting for the following string on stdout: %s", data)
 	if len(data) == 0 {
 		return nil
@@ -245,6 +298,8 @@ func (t *testClientSession) Stderr() io.Reader {
 
 func (t *testClientSession) Wait() error {
 	t.logger.Debugf("Waiting for session to finish.")
+	t.ReadRemaining()
+	t.ReadRemainingStderr()
 	err := t.session.Wait()
 	if err != nil {
 		exitErr := &ssh.ExitError{}

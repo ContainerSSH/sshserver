@@ -76,10 +76,16 @@ type TestClientSession interface {
 	Write(data []byte) (int, error)
 
 	// Type writes to the stdin slowly with 50 ms delays
-	Type(data[]byte) (error)
+	Type(data []byte) error
 
 	// Read reads from the stdout of the session.
 	Read(data []byte) (int, error)
+
+	// ReadRemaining reads the remaining bytes from stdout until EOF.
+	ReadRemaining()
+
+	// ReadRemainingStderr reads the remaining bytes from stderr until EOF.
+	ReadRemainingStderr()
 
 	// WaitForStdout waits for a specific byte sequence to appear on the stdout.
 	WaitForStdout(ctx context.Context, data []byte) error

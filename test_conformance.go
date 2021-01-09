@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -183,23 +184,23 @@ func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestCl
 		t.Error(err)
 		return true
 	}
-	if !shellCommand(t, session, "tput cols", "80\n") {
+	if !shellCommand(t, session, "tput cols", "80\r\n") {
 		return true
 	}
-	if !shellCommand(t, session, "tput rows", "25\n") {
+	if !shellCommand(t, session, "tput lines", "25\r\n") {
 		return true
 	}
 	if err := session.Window(120, 25); err != nil {
 		t.Error(err)
 		return true
 	}
-	if !shellCommand(t, session, "tput cols", "120\n") {
+	if !shellCommand(t, session, "tput cols", "120\r\n") {
 		return true
 	}
-	if !shellCommand(t, session, "tput rows", "25\n") {
+	if !shellCommand(t, session, "tput lines", "25\r\n") {
 		return true
 	}
-	if !shellCommand(t, session, "echo \"Hello world!\"", "Hello world!\n") {
+	if !shellCommand(t, session, "echo \"Hello world!\"", "Hello world!\r\n") {
 		return true
 	}
 	if !shellCommand(t, session, "exit", "") {
@@ -245,7 +246,7 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 	_ = session.Close()
 }
 
-func (c* conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
+func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	t.Parallel()
 	backend, err := c.backendFactory()
 	if err != nil {
@@ -276,7 +277,7 @@ func (c* conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	if err := session.Signal("USR1"); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("USR1 received\n")); err != nil {
 		t.Fatal(err)
@@ -299,17 +300,19 @@ func shellCommand(t *testing.T, session TestClientSession, command string, expec
 	defer cancel()
 	if err := session.WaitForStdout(
 		timeout,
-		[]byte(fmt.Sprintf("%s", command, expectResponse)),
+		[]byte(expectResponse),
 	); err != nil {
 		t.Error(err)
 		return false
 	}
-	if err := session.WaitForStdout(
-		timeout,
-		[]byte("# "),
-	); err != nil {
-		t.Error(err)
-		return false
+	if !strings.Contains("exit", command) {
+		if err := session.WaitForStdout(
+			timeout,
+			[]byte("# "),
+		); err != nil {
+			t.Error(err)
+			return false
+		}
 	}
 	return true
 }
