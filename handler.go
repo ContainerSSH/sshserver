@@ -83,6 +83,24 @@ type ChannelRejection interface {
 	Reason() ssh.RejectionReason
 }
 
+// SessionChannel contains a set of calls to manipulate the session channel.
+type SessionChannel interface {
+	// Stdin returns the reader for the standard input.
+	Stdin() io.Reader
+	// Stdout returns the writer for the standard output.
+	Stdout() io.Writer
+	// Stderr returns the writer for the standard error.
+	Stderr() io.Writer
+	// ExitStatus sends the program exit status to the client.
+	ExitStatus(code uint32)
+	// ExitSignal sends a message to the client indicating that the program exited violently.
+	ExitSignal(signal string, coreDumped bool, errorMessage string, languageTag string)
+	// CloseWrite sends an EOF to the client indicating that no more data will be sent on stdout or stderr.
+	CloseWrite() error
+	// Close closes the channel for reading and writing.
+	Close() error
+}
+
 // SSHConnectionHandler represents an established SSH connection that is ready to receive requests.
 type SSHConnectionHandler interface {
 	// OnUnsupportedGlobalRequest captures all global SSH requests and gives the implementation an opportunity to log
@@ -106,7 +124,12 @@ type SSHConnectionHandler interface {
 	//
 	// channelID is an ID uniquely identifying the channel within the connection.
 	// extraData contains the binary extra data submitted by the client. This is usually empty.
-	OnSessionChannel(channelID uint64, extraData []byte) (channel SessionChannelHandler, failureReason ChannelRejection)
+	// session contains a set of calls that can be used to manipulate the SSH session.
+	OnSessionChannel(
+		channelID uint64,
+		extraData []byte,
+		session SessionChannel,
+	) (channel SessionChannelHandler, failureReason ChannelRejection)
 
 	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
 	//            for the shutdown, after which the server should abort all running connections and return as fast as
@@ -120,11 +143,6 @@ type ExitStatus uint32
 
 // SessionChannelHandler is a channel of the "session" type used for interactive and non-interactive sessions
 type SessionChannelHandler interface {
-	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
-	//            for the shutdown, after which the server should abort all running connections and return as fast as
-	//            possible.
-	OnShutdown(shutdownContext context.Context)
-
 	//region Channel request initialization
 
 	// OnUnsupportedChannelRequest captures channel requests of unsupported types.
@@ -193,17 +211,9 @@ type SessionChannelHandler interface {
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
 	// program is the Name of the program to be executed.
-	// stdin is a reader for the shell or program to read the stdin.
-	// stdout is a writer for the shell or program standard output.
-	// stderr is a writer for the shell or program standard error.
-	// onExit is a callback to send the exit status back to the client.
 	OnExecRequest(
 		requestID uint64,
 		program string,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-		onExit func(exitStatus ExitStatus),
 	) error
 
 	// OnShell is called when the client requests a shell to be started. The implementation can return an error to
@@ -214,13 +224,10 @@ type SessionChannelHandler interface {
 	// stdin is a reader for the shell or program to read the stdin.
 	// stdout is a writer for the shell or program standard output.
 	// stderr is a writer for the shell or program standard error.
+	// writeClose closes the stdout and stderr for writing.
 	// onExit is a callback to send the exit status back to the client.
 	OnShell(
 		requestID uint64,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-		onExit func(exitStatus ExitStatus),
 	) error
 
 	// OnSubsystem is called when the client calls a well-known Subsystem (e.g. sftp). The implementation can return an
@@ -229,17 +236,10 @@ type SessionChannelHandler interface {
 	//             initializing the subsystem.
 	//
 	// requestID is an incrementing number uniquely identifying this request within the channel.
-	// stdin is a reader for the shell or program to read the stdin.
-	// stdout is a writer for the shell or program standard output.
-	// stderr is a writer for the shell or program standard error.
-	// onExit is a callback to send the exit status back to the client.
+	// subsystem is the name of the subsystem to be launched (e.g. sftp)
 	OnSubsystem(
 		requestID uint64,
 		subsystem string,
-		stdin io.Reader,
-		stdout io.Writer,
-		stderr io.Writer,
-		onExit func(exitStatus ExitStatus),
 	) error
 
 	//endregion
@@ -268,6 +268,18 @@ type SessionChannelHandler interface {
 		width uint32,
 		height uint32,
 	) error
+
+	//endregion
+
+	//region closing the channel
+
+	// OnClose is called when the channel is closed.
+	OnClose()
+
+	// OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline
+	//            for the shutdown, after which the server should abort all running connections and return as fast as
+	//            possible.
+	OnShutdown(shutdownContext context.Context)
 
 	//endregion
 }

@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/containerssh/unixutils"
 )
@@ -71,14 +70,13 @@ type testSSHHandler struct {
 	shutdown       bool
 }
 
-func (t *testSSHHandler) OnSessionChannel(_ uint64, _ []byte) (
+func (t *testSSHHandler) OnSessionChannel(_ uint64, _ []byte, session SessionChannel) (
 	channel SessionChannelHandler,
 	failureReason ChannelRejection,
 ) {
 	return &testSessionChannel{
-		env:    map[string]string{},
-		exited: make(chan struct{}),
-		exit:   &sync.Once{},
+		session: session,
+		env:     map[string]string{},
 	}, nil
 }
 
@@ -89,17 +87,13 @@ func (t *testSSHHandler) OnShutdown(_ context.Context) {
 type testSessionChannel struct {
 	AbstractSessionChannelHandler
 
+	session SessionChannel
 	env     map[string]string
 	pty     bool
 	rows    uint32
 	columns uint32
 	running bool
 	term    bool
-	stdin   io.ReadCloser
-	stdout  io.WriteCloser
-	exited  chan struct{}
-	exit    *sync.Once
-	onExit  func(exitStatus ExitStatus)
 }
 
 func (t *testSessionChannel) OnEnvRequest(_ uint64, name string, value string) error {
@@ -132,10 +126,6 @@ func (t *testSessionChannel) OnPtyRequest(
 func (t *testSessionChannel) OnExecRequest(
 	_ uint64,
 	program string,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-	onExit func(exitStatus ExitStatus),
 ) error {
 	if t.running {
 		return errors.New("program already running")
@@ -145,78 +135,60 @@ func (t *testSessionChannel) OnExecRequest(
 		return err
 	}
 	t.running = true
-	t.onExit = onExit
-	t.stdin = stdin.(io.ReadCloser)
-	t.stdout = stdout.(io.WriteCloser)
-	onExit = t.wrapOnExit(onExit)
 	go func() {
-		err := t.run(argv, stdout, stderr, true)
+		err := t.run(argv, t.session.Stdout(), t.session.Stderr(), true)
 		if err != nil {
-			onExit(1)
+			t.session.ExitStatus(1)
 		} else {
-			onExit(0)
+			t.session.ExitStatus(0)
 		}
+		_ = t.session.Close()
 	}()
 	return nil
 }
 
-func (t *testSessionChannel) wrapOnExit(onExit func(exitStatus ExitStatus)) func(exitStatus ExitStatus) {
-	return func(exitStatus ExitStatus) {
-		select {
-		case t.exited <- struct{}{}:
-		default:
-		}
-		t.exit.Do(func() {
-			onExit(exitStatus)
-		})
-	}
-}
-
 func (t *testSessionChannel) OnShell(
 	_ uint64,
-	stdin io.Reader,
-	stdout io.Writer,
-	stderr io.Writer,
-	onExit func(exitStatus ExitStatus),
 ) error {
 	if t.running {
 		return errors.New("program already running")
 	}
-	t.onExit = onExit
 	t.running = true
-	t.stdin = stdin.(io.ReadCloser)
-	t.stdout = stdout.(io.WriteCloser)
-	onExit = t.wrapOnExit(onExit)
 	go func() {
 		for {
 			if t.pty {
-				_, err := stdout.Write([]byte("> "))
+				_, err := t.session.Stdout().Write([]byte("> "))
 				if err != nil {
-					onExit(1)
+					t.session.ExitStatus(1)
+					_ = t.session.Close()
 					return
 				}
 			}
-			command, done := t.readCommand(stdin, stdout, onExit)
+			command, done := t.readCommand(t.session.Stdin(), t.session.Stdout())
 			if done {
 				return
 			}
 			argv, err := unixutils.ParseCMD(command)
 			if err != nil {
-				_, _ = stderr.Write([]byte(err.Error()))
-				onExit(1)
+				_, _ = t.session.Stderr().Write([]byte(err.Error()))
+				t.session.ExitStatus(1)
+				_ = t.session.Close()
 				return
 			}
+			var stderr io.Writer
 			if t.pty {
 				// If the terminal is interactive everything goes to stdout.
-				stderr = stdout
+				stderr = t.session.Stdout()
+			} else {
+				stderr = t.session.Stderr()
 			}
 			if argv[0] == "exit" {
-				onExit(0)
-				return
+				t.session.ExitStatus(0)
+				_ = t.session.Close()
 			}
-			if err := t.run(argv, stdout, stderr, false); err != nil {
-				onExit(1)
-				return
+			if err := t.run(argv, t.session.Stdout(), stderr, false); err != nil {
+				t.session.ExitStatus(1)
+				_ = t.session.Close()
 			}
 		}
 	}()
@@ -226,7 +198,6 @@ func (t *testSessionChannel) OnShell(
 func (t *testSessionChannel) readCommand(
 	stdin io.Reader,
 	stdout io.Writer,
-	onExit func(exitStatus ExitStatus),
 ) (
 	string,
 	bool,
@@ -237,29 +208,33 @@ func (t *testSessionChannel) readCommand(
 		n, err := stdin.Read(b)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				onExit(0)
+				t.session.ExitStatus(0)
+				_ = t.session.Close()
 				return "", true
 			} else {
-				onExit(1)
+				t.session.ExitStatus(1)
+				_ = t.session.Close()
 				return "", true
 			}
 		}
 		if n == 0 {
-			onExit(0)
+			t.session.ExitStatus(0)
+			_ = t.session.Close()
 			return "", true
 		}
 		if t.term {
-			onExit(0)
+			t.session.ExitStatus(0)
+			_ = t.session.Close()
 			return "", true
 		}
 		if _, err := stdout.Write(b); err != nil {
 			if errors.Is(err, io.EOF) {
-				onExit(0)
-				return "", true
+				t.session.ExitStatus(0)
 			} else {
-				onExit(1)
-				return "", true
+				t.session.ExitStatus(1)
 			}
+			_ = t.session.Close()
+			return "", true
 		}
 		cmd.Write(b)
 		if b[0] == '\n' {
@@ -313,8 +288,8 @@ func (t *testSessionChannel) OnSignal(
 		return fmt.Errorf("signal type not supported")
 	}
 
-	// We cannot stop the process in a sane way due to the stupid SSH API, so let's instead close the channel.
-	_ = t.stdin.Close()
+	t.session.ExitStatus(0)
+	_ = t.session.Close()
 
 	return nil
 }
@@ -339,11 +314,6 @@ func (t *testSessionChannel) OnWindow(
 
 func (t *testSessionChannel) OnShutdown(_ context.Context) {
 	if t.running {
-		//Simulate exit
-		_ = t.OnSignal(0, "TERM")
-		t.exit.Do(
-			func() {
-				t.onExit(0)
-			})
+		_ = t.session.Close()
 	}
 }

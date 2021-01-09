@@ -1,6 +1,9 @@
 package sshserver
 
 import (
+	"os"
+
+	"github.com/containerssh/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -19,8 +22,21 @@ func NewTestClient(
 		panic(err)
 	}
 
+	logger, err := log.New(
+		log.Config{
+			Level:  log.LevelDebug,
+			Format: log.FormatText,
+		},
+		"test-client",
+		os.Stdout,
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	return &testClient{
-		server:  "127.0.0.1:2222",
+		logger:  logger,
+		server:  server.GetListen(),
 		hostKey: private.PublicKey().Marshal(),
 		user:    user,
 	}

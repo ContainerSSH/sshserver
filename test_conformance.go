@@ -1,0 +1,329 @@
+package sshserver
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"testing"
+	"time"
+)
+
+// ConformanceTestBackendFactory is a method to creating a network connection handler for testing purposes.
+type ConformanceTestBackendFactory = func() (NetworkConnectionHandler, error)
+
+// RunConformanceTests runs a suite of conformance tests against the provided backends supporting a standard
+// Linux shell.
+//goland:noinspection GoUnusedExportedFunction
+func RunConformanceTests(t *testing.T, backendFactories map[string]ConformanceTestBackendFactory) {
+	t.Parallel()
+
+	for name, factory := range backendFactories {
+		n := name
+		f := factory
+		t.Run(n, func(t *testing.T) {
+			t.Parallel()
+			testSuite := &conformanceTestSuite{
+				backendFactory: f,
+			}
+			t.Run("singleProgramShouldRun", testSuite.singleProgramShouldRun)
+			t.Run("settingEnvVariablesShouldWork", testSuite.settingEnvVariablesShouldWork)
+			t.Run("runningInteractiveShellShouldWork", testSuite.runningInteractiveShellShouldWork)
+			t.Run("reportingExitCodeShouldWork", testSuite.reportingExitCodeShouldWork)
+			t.Run("sendingSignalsShouldWork", testSuite.sendingSignalsShouldWork)
+		})
+	}
+}
+
+type conformanceTestSuite struct {
+	backendFactory ConformanceTestBackendFactory
+}
+
+func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
+	t.Parallel()
+	backend, err := c.backendFactory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := NewTestUser("test")
+	user.RandomPassword()
+	srv := NewTestServer(NewTestAuthenticationHandler(
+		newHandler(backend),
+		user,
+	))
+	srv.Start()
+	defer srv.Stop(10 * time.Second)
+
+	client := NewTestClient(srv, user)
+	connection, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close()
+	}()
+	session := connection.MustSession()
+	if err := session.Exec("echo \"Hello world!\""); err != nil {
+		t.Fatal(err)
+	}
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if session.ExitCode() != 0 {
+		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
+	}
+	_ = session.Close()
+}
+
+func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
+	t.Parallel()
+	backend, err := c.backendFactory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := NewTestUser("test")
+	user.RandomPassword()
+	srv := NewTestServer(NewTestAuthenticationHandler(
+		newHandler(backend),
+		user,
+	))
+	srv.Start()
+	defer srv.Stop(10 * time.Second)
+
+	client := NewTestClient(srv, user)
+	connection, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close()
+	}()
+	session := connection.MustSession()
+	if err := session.SetEnv("FOO", "Hello world!"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Exec("echo \"$FOO\""); err != nil {
+		t.Fatal(err)
+	}
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if session.ExitCode() != 0 {
+		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
+	}
+	_ = session.Close()
+}
+
+func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
+	t.Parallel()
+	backend, err := c.backendFactory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := NewTestUser("test")
+	user.RandomPassword()
+	srv := NewTestServer(NewTestAuthenticationHandler(
+		newHandler(backend),
+		user,
+	))
+	srv.Start()
+	defer srv.Stop(10 * time.Second)
+
+	client := NewTestClient(srv, user)
+	connection, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close()
+	}()
+	session := connection.MustSession()
+	if err := session.SetEnv("foo", "bar"); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := session.RequestPTY("xterm", 80, 25); err != nil {
+		t.Error(err)
+		return
+	}
+	if err := session.Shell(); err != nil {
+		t.Error(err)
+		return
+	}
+	if c.testShellInteraction(t, session) {
+		return
+	}
+	if err := session.Wait(); err != nil {
+		t.Error(err)
+		return
+	}
+	if session.ExitCode() != 0 {
+		t.Errorf("invalid exit code returned: %d", session.ExitCode())
+		return
+	}
+	_ = session.Close()
+}
+
+func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestClientSession) bool {
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.WaitForStdout(timeout, []byte("# ")); err != nil {
+		t.Error(err)
+		return true
+	}
+	if !shellCommand(t, session, "tput cols", "80\n") {
+		return true
+	}
+	if !shellCommand(t, session, "tput rows", "25\n") {
+		return true
+	}
+	if err := session.Window(120, 25); err != nil {
+		t.Error(err)
+		return true
+	}
+	if !shellCommand(t, session, "tput cols", "120\n") {
+		return true
+	}
+	if !shellCommand(t, session, "tput rows", "25\n") {
+		return true
+	}
+	if !shellCommand(t, session, "echo \"Hello world!\"", "Hello world!\n") {
+		return true
+	}
+	if !shellCommand(t, session, "exit", "") {
+		return true
+	}
+	return false
+}
+
+func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
+	t.Parallel()
+	backend, err := c.backendFactory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := NewTestUser("test")
+	user.RandomPassword()
+	srv := NewTestServer(NewTestAuthenticationHandler(
+		newHandler(backend),
+		user,
+	))
+	srv.Start()
+	defer srv.Stop(10 * time.Second)
+
+	client := NewTestClient(srv, user)
+	connection, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close()
+	}()
+	session := connection.MustSession()
+	if err := session.Exec("exit 42"); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if session.ExitCode() != 42 {
+		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
+	}
+	_ = session.Close()
+}
+
+func (c* conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
+	t.Parallel()
+	backend, err := c.backendFactory()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	user := NewTestUser("test")
+	user.RandomPassword()
+	srv := NewTestServer(NewTestAuthenticationHandler(
+		newHandler(backend),
+		user,
+	))
+	srv.Start()
+	defer srv.Stop(10 * time.Second)
+
+	client := NewTestClient(srv, user)
+	connection, err := client.Connect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = connection.Close()
+	}()
+	session := connection.MustSession()
+	if err := session.Exec("sleep infinity & PID=$!; trap \"kill $PID\" USR1; wait; echo \"USR1 received\""); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Signal("USR1"); err != nil {
+		t.Fatal(err)
+	}
+	timeout, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+	defer cancel()
+	if err := session.WaitForStdout(timeout, []byte("USR1 received\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if session.ExitCode() != 0 {
+		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
+	}
+	_ = session.Close()
+}
+
+func shellCommand(t *testing.T, session TestClientSession, command string, expectResponse string) bool {
+	if err := session.Type([]byte(fmt.Sprintf("%s\n", command))); err != nil {
+		t.Error(err)
+		return false
+	}
+	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := session.WaitForStdout(
+		timeout,
+		[]byte(fmt.Sprintf("%s", command, expectResponse)),
+	); err != nil {
+		t.Error(err)
+		return false
+	}
+	if err := session.WaitForStdout(
+		timeout,
+		[]byte("# "),
+	); err != nil {
+		t.Error(err)
+		return false
+	}
+	return true
+}
+
+func newHandler(backend NetworkConnectionHandler) *handler {
+	return &handler{backend: backend}
+}
+
+type handler struct {
+	AbstractHandler
+
+	backend NetworkConnectionHandler
+}
+
+func (h *handler) OnNetworkConnection(_ net.TCPAddr, _ string) (NetworkConnectionHandler, error) {
+	return h.backend, nil
+}

@@ -3,7 +3,6 @@ package sshserver
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 
 	"golang.org/x/crypto/ssh"
@@ -114,10 +113,7 @@ func (n *notImplementedRejection) Reason() ssh.RejectionReason {
 // OnSessionChannel is called when a channel of the session type is requested. The implementer must either return
 //                  the channel result if the channel was successful, or failureReason to state why the channel
 //                  should be rejected.
-//
-// channelID is an ID uniquely identifying the channel within the connection.
-// extraData contains the binary extra data submitted by the client. This is usually empty.
-func (a *AbstractSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte) (
+func (a *AbstractSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte, _ SessionChannel) (
 	channel SessionChannelHandler, failureReason ChannelRejection,
 ) {
 	return nil, &notImplementedRejection{}
@@ -137,6 +133,9 @@ type AbstractSessionChannelHandler struct {
 //            for the shutdown, after which the server should abort all running connections and return as fast as
 //            possible.
 func (a *AbstractSessionChannelHandler) OnShutdown(_ context.Context) {}
+
+// OnClose is called when the channel is closed.
+func (a *AbstractSessionChannelHandler) OnClose() {}
 
 // OnUnsupportedChannelRequest captures channel requests of unsupported types.
 //
@@ -199,20 +198,9 @@ func (a *AbstractSessionChannelHandler) OnPtyRequest(
 
 // OnExecRequest is called when the client request a program to be executed. The implementation can return an error
 //               to reject the request. This method MUST NOT block beyond initializing the program.
-//
-// requestID is an incrementing number uniquely identifying this request within the channel.
-// program is the Name of the program to be executed.
-// stdin is a reader for the shell or program to read the stdin.
-// stdout is a writer for the shell or program standard output.
-// stderr is a writer for the shell or program standard error.
-// onExit is a callback to send the exit status back to the client.
 func (a *AbstractSessionChannelHandler) OnExecRequest(
 	_ uint64,
 	_ string,
-	_ io.Reader,
-	_ io.Writer,
-	_ io.Writer,
-	_ func(exitStatus ExitStatus),
 ) error {
 	return fmt.Errorf("not supported")
 }
@@ -220,18 +208,8 @@ func (a *AbstractSessionChannelHandler) OnExecRequest(
 // OnShell is called when the client requests a shell to be started. The implementation can return an error to
 //         reject the request. The implementation should send the IO handling into background. It should also
 //         respect the shutdown context on the Handler. This method MUST NOT block beyond initializing the shell.
-//
-// requestID is an incrementing number uniquely identifying this request within the channel.
-// stdin is a reader for the shell or program to read the stdin.
-// stdout is a writer for the shell or program standard output.
-// stderr is a writer for the shell or program standard error.
-// onExit is a callback to send the exit status back to the client.
 func (a *AbstractSessionChannelHandler) OnShell(
 	_ uint64,
-	_ io.Reader,
-	_ io.Writer,
-	_ io.Writer,
-	_ func(exitStatus ExitStatus),
 ) error {
 	return fmt.Errorf("not supported")
 }
@@ -240,19 +218,9 @@ func (a *AbstractSessionChannelHandler) OnShell(
 //             error to reject the request. The implementation should send the IO handling into background. It
 //             should also respect the shutdown context on the Handler. This method MUST NOT block beyond
 //             initializing the subsystem.
-//
-// requestID is an incrementing number uniquely identifying this request within the channel.
-// stdin is a reader for the shell or program to read the stdin.
-// stdout is a writer for the shell or program standard output.
-// stderr is a writer for the shell or program standard error.
-// onExit is a callback to send the exit status back to the client.
 func (a *AbstractSessionChannelHandler) OnSubsystem(
 	_ uint64,
 	_ string,
-	_ io.Reader,
-	_ io.Writer,
-	_ io.Writer,
-	_ func(exitStatus ExitStatus),
 ) error {
 	return fmt.Errorf("not supported")
 }

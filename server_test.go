@@ -440,6 +440,8 @@ func newFullHandler(
 
 //region Handler
 type fullHandler struct {
+	sshserver.AbstractHandler
+
 	ctx             context.Context
 	shutdownContext context.Context
 	cancelFunc      context.CancelFunc
@@ -471,14 +473,15 @@ func (f *fullHandler) OnNetworkConnection(_ net.TCPAddr, _ string) (sshserver.Ne
 //region Network connection handler
 
 type fullNetworkConnectionHandler struct {
+	sshserver.AbstractNetworkConnectionHandler
+
 	handler *fullHandler
 }
 
-func (f *fullNetworkConnectionHandler) OnShutdown(_ context.Context) {
-
-}
-
-func (f *fullNetworkConnectionHandler) OnAuthPassword(username string, password []byte) (response sshserver.AuthResponse, reason error) {
+func (f *fullNetworkConnectionHandler) OnAuthPassword(
+	username string,
+	password []byte,
+) (response sshserver.AuthResponse, reason error) {
 	if storedPassword, ok := f.handler.passwords[username]; ok && bytes.Equal(storedPassword, password) {
 		return sshserver.AuthResponseSuccess, nil
 	}
@@ -492,18 +495,10 @@ func (f *fullNetworkConnectionHandler) OnAuthPubKey(username string, pubKey stri
 	return sshserver.AuthResponseFailure, fmt.Errorf("authentication failed")
 }
 
-func (f *fullNetworkConnectionHandler) OnHandshakeFailed(_ error) {
-
-}
-
 func (f *fullNetworkConnectionHandler) OnHandshakeSuccess(_ string) (connection sshserver.SSHConnectionHandler, failureReason error) {
 	return &fullSSHConnectionHandler{
 		handler: f.handler,
 	}, nil
-}
-
-func (f *fullNetworkConnectionHandler) OnDisconnect() {
-
 }
 
 //endregion
@@ -511,25 +506,20 @@ func (f *fullNetworkConnectionHandler) OnDisconnect() {
 //region SSH connection handler
 
 type fullSSHConnectionHandler struct {
+	sshserver.AbstractSSHConnectionHandler
+
 	handler *fullHandler
 }
 
-func (f *fullSSHConnectionHandler) OnShutdown(_ context.Context) {
-
-}
-
-func (f *fullSSHConnectionHandler) OnUnsupportedGlobalRequest(_ uint64, _ string, _ []byte) {
-
-}
-
-func (f *fullSSHConnectionHandler) OnUnsupportedChannel(_ uint64, _ string, _ []byte) {
-
-}
-
-func (f *fullSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte) (channel sshserver.SessionChannelHandler, failureReason sshserver.ChannelRejection) {
+func (f *fullSSHConnectionHandler) OnSessionChannel(
+	_ uint64,
+	_ []byte,
+	session sshserver.SessionChannel,
+) (channel sshserver.SessionChannelHandler, failureReason sshserver.ChannelRejection) {
 	return &fullSessionChannelHandler{
 		handler: f.handler,
 		env:     map[string]string{},
+		session: session,
 	}, nil
 }
 
@@ -538,15 +528,11 @@ func (f *fullSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte) (channel
 //region Session channel handler
 
 type fullSessionChannelHandler struct {
+	sshserver.AbstractSessionChannelHandler
+
 	handler *fullHandler
 	env     map[string]string
-	stdin   io.Reader
-}
-
-func (f *fullSessionChannelHandler) OnUnsupportedChannelRequest(_ uint64, _ string, _ []byte) {
-}
-
-func (f *fullSessionChannelHandler) OnFailedDecodeChannelRequest(_ uint64, _ string, _ []byte, _ error) {
+	session sshserver.SessionChannel
 }
 
 func (f *fullSessionChannelHandler) OnEnvRequest(_ uint64, name string, value string) error {
@@ -554,38 +540,31 @@ func (f *fullSessionChannelHandler) OnEnvRequest(_ uint64, name string, value st
 	return nil
 }
 
-func (f *fullSessionChannelHandler) OnExecRequest(
-	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
-) error {
-	return fmt.Errorf("this server does not support Exec")
-}
-
-func (f *fullSessionChannelHandler) OnPtyRequest(
-	_ uint64, _ string, _ uint32, _ uint32, _ uint32, _ uint32, _ []byte,
-) error {
-	return fmt.Errorf("this server does not support PTY")
-}
-
 func (f *fullSessionChannelHandler) OnShell(
-	_ uint64, stdin io.Reader, stdout io.Writer, _ io.Writer, onExit func(exitStatus sshserver.ExitStatus),
+	_ uint64,
 ) error {
+	stdin := f.session.Stdin()
+	stdout := f.session.Stdout()
 	go func() {
-		f.stdin = stdin
 		data := make([]byte, 4096)
 		n, err := stdin.Read(data)
 		if err != nil {
-			onExit(1)
+			f.session.ExitStatus(1)
+			_ = f.session.Close()
 			return
 		}
 		if string(data[:n]) != "Hi" {
-			onExit(1)
+			f.session.ExitStatus(1)
+			_ = f.session.Close()
 			return
 		}
 		if _, err := stdout.Write([]byte("Hello world!")); err != nil {
-			onExit(1)
-			return
+			f.session.ExitStatus(1)
+			_ = f.session.Close()
+
 		}
-		onExit(0)
+		f.session.ExitStatus(0)
+		_ = f.session.Close()
 	}()
 	return nil
 }
@@ -594,21 +573,12 @@ func (f *fullSessionChannelHandler) OnSignal(_ uint64, _ string) error {
 	return nil
 }
 
-func (f *fullSessionChannelHandler) OnSubsystem(
-	_ uint64, _ string, _ io.Reader, _ io.Writer, _ io.Writer, _ func(exitStatus sshserver.ExitStatus),
-) error {
-	return fmt.Errorf("subsystem not supported")
-}
-
 func (f *fullSessionChannelHandler) OnWindow(_ uint64, _ uint32, _ uint32, _ uint32, _ uint32) error {
 	return nil
 }
 
 func (f *fullSessionChannelHandler) OnShutdown(_ context.Context) {
-	if f.stdin != nil {
-		// HACK: close stdin to trigger a stop.
-		_ = f.stdin.(io.Closer).Close()
-	}
+	_ = f.session.Close()
 }
 
 //endregion

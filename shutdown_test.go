@@ -42,5 +42,4 @@ func TestProperShutdown(t *testing.T) {
 		t.Fail()
 	case <-finished:
 	}
-
 }

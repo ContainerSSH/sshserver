@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"sync"
+	time "time"
 
+	"github.com/containerssh/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -16,9 +18,11 @@ type testClient struct {
 	server  string
 	hostKey []byte
 	user    *TestUser
+	logger  log.Logger
 }
 
 func (t *testClient) Connect() (TestClientConnection, error) {
+	t.logger.Debugf("Connecting SSH server...")
 	sshConfig := &ssh.ClientConfig{
 		User: t.user.Username(),
 		Auth: t.user.getAuthMethods(),
@@ -35,6 +39,7 @@ func (t *testClient) Connect() (TestClientConnection, error) {
 	}
 
 	return &testClientConnection{
+		logger: t.logger,
 		sshConnection: sshConnection,
 	}, nil
 }
@@ -49,6 +54,7 @@ func (t *testClient) MustConnect() TestClientConnection {
 
 type testClientConnection struct {
 	sshConnection *ssh.Client
+	logger        log.Logger
 }
 
 func (t *testClientConnection) MustSession() TestClientSession {
@@ -60,6 +66,7 @@ func (t *testClientConnection) MustSession() TestClientSession {
 }
 
 func (t *testClientConnection) Session() (TestClientSession, error) {
+	t.logger.Debugf("Opening session channel..")
 	session, err := t.sshConnection.NewSession()
 	if err != nil {
 		return nil, err
@@ -72,6 +79,7 @@ func (t *testClientConnection) Session() (TestClientSession, error) {
 	session.Stderr = stderr
 
 	return &testClientSession{
+		logger:   t.logger,
 		session:  session,
 		stdin:    stdin,
 		stdout:   stdout,
@@ -81,6 +89,7 @@ func (t *testClientConnection) Session() (TestClientSession, error) {
 }
 
 func (t *testClientConnection) Close() error {
+	t.logger.Debugf("Closing connection...")
 	return t.sshConnection.Close()
 }
 
@@ -90,6 +99,30 @@ type testClientSession struct {
 	stderr   *syncContextPipe
 	stdout   *syncContextPipe
 	exitCode int
+	logger   log.Logger
+}
+
+func (t *testClientSession) Type(data []byte) error {
+	for _, b := range data {
+		_, err := t.Write([]byte{b})
+		if err != nil {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return nil
+}
+
+func (t *testClientSession) Signal(signal string) error {
+	t.logger.Debugf("Sending %s signal to process...", signal)
+	return t.session.Signal(ssh.Signal(signal))
+}
+
+func (t *testClientSession) MustSignal(signal string) {
+	err := t.Signal(signal)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (t *testClientSession) MustSetEnv(name string, value string) {
@@ -129,46 +162,57 @@ func (t *testClientSession) MustSubsystem(name string) {
 }
 
 func (t *testClientSession) SetEnv(name string, value string) error {
+	t.logger.Debugf("Setting env variable %s=%s...", name, value)
 	return t.session.Setenv(name, value)
 }
 
 func (t *testClientSession) Window(cols int, rows int) error {
+	t.logger.Debugf("Changing window to cols %d rows %d...", cols, rows)
 	return t.session.WindowChange(cols, rows)
 }
 
 func (t *testClientSession) RequestPTY(term string, cols int, rows int) error {
+	t.logger.Debugf("Requesting PTY for term %s cols %d rows %d...", term, cols, rows)
 	return t.session.RequestPty(term, cols, rows, ssh.TerminalModes{})
 }
 
 func (t *testClientSession) Shell() error {
+	t.logger.Debugf("Executing shell...")
 	return t.session.Shell()
 }
 
 func (t *testClientSession) Exec(program string) error {
-	return t.session.Run(program)
+	t.logger.Debugf("Executing program '%s'...", program)
+	return t.session.Start(program)
 }
 
 func (t *testClientSession) Subsystem(name string) error {
+	t.logger.Debugf("Requesting subsystem %s...", name)
 	return t.session.RequestSubsystem(name)
 }
 
 func (t *testClientSession) Write(data []byte) (int, error) {
+	t.logger.Debugf("Writing to stdin: %s", data)
 	return t.stdin.Write(data)
 }
 
 func (t *testClientSession) WriteCtx(ctx context.Context, data []byte) (int, error) {
+	t.logger.Debugf("Writing to stdin: %s", data)
 	return t.stdin.WriteCtx(ctx, data)
 }
 
 func (t *testClientSession) Read(data []byte) (int, error) {
+	t.logger.Debugf("Reading %d bytes from stdout...", len(data))
 	return t.stdout.Read(data)
 }
 
 func (t *testClientSession) ReadCtx(ctx context.Context, data []byte) (int, error) {
+	t.logger.Debugf("Reading %d bytes from stdout...", len(data))
 	return t.stdout.ReadCtx(ctx, data)
 }
 
 func (t *testClientSession) WaitForStdout(ctx context.Context, data []byte) error {
+	t.logger.Debugf("Waiting for the following string on stdout: %s", data)
 	if len(data) == 0 {
 		return nil
 	}
@@ -185,10 +229,11 @@ func (t *testClientSession) WaitForStdout(ctx context.Context, data []byte) erro
 				ringBuffer = append(ringBuffer[1:], buf[0])
 			} else {
 				ringBuffer[bufIndex] = buf[0]
-				bufIndex++
+				bufIndex += n
 			}
 		}
-		if bytes.Equal(ringBuffer, data) {
+		t.logger.Debugf("Ringbuffer currently contains the following %d bytes: %s", bufIndex, ringBuffer[:bufIndex])
+		if bytes.Equal(ringBuffer[:bufIndex], data) {
 			return nil
 		}
 	}
@@ -199,11 +244,16 @@ func (t *testClientSession) Stderr() io.Reader {
 }
 
 func (t *testClientSession) Wait() error {
+	t.logger.Debugf("Waiting for session to finish.")
 	err := t.session.Wait()
-	exitErr := &ssh.ExitError{}
-	if errors.As(err, &exitErr) {
-		t.exitCode = exitErr.ExitStatus()
-		return nil
+	if err != nil {
+		exitErr := &ssh.ExitError{}
+		if errors.As(err, &exitErr) {
+			t.exitCode = exitErr.ExitStatus()
+			return nil
+		}
+	} else {
+		t.exitCode = 0
 	}
 	return err
 }

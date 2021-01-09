@@ -48,6 +48,12 @@ type TestClientSession interface {
 	// MustRequestPTY is identical to RequestPTY but panics if an error happens.
 	MustRequestPTY(term string, cols int, rows int)
 
+	// Signal sends a signal to the process
+	Signal(signal string) error
+
+	// MustSignal is equal to Signal but panics if an error happens.
+	MustSignal(signal string)
+
 	// Shell requests a shell to be opened. After this call returns I/O interactions are possible.
 	Shell() error
 
@@ -68,6 +74,9 @@ type TestClientSession interface {
 
 	// Write writes to the stdin of the session.
 	Write(data []byte) (int, error)
+
+	// Type writes to the stdin slowly with 50 ms delays
+	Type(data[]byte) (error)
 
 	// Read reads from the stdout of the session.
 	Read(data []byte) (int, error)

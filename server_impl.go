@@ -325,7 +325,14 @@ type windowRequestPayload struct {
 }
 
 type exitStatusPayload struct {
-	exitStatus ExitStatus
+	ExitStatus uint32
+}
+
+type exitSignalPayload struct {
+	Signal string
+	CoreDumped bool
+	ErrorMessage string
+	LanguageTag string
 }
 
 type requestType string
@@ -340,8 +347,116 @@ const (
 	requestTypeSignal    requestType = "signal"
 )
 
+type channelWrapper struct {
+	channel        ssh.Channel
+	logger         log.Logger
+	lock           *sync.Mutex
+	exitSent       bool
+	exitSignalSent bool
+	closedWrite    bool
+	closed         bool
+}
+
+func (c *channelWrapper) Stdin() io.Reader {
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: stdin requested before channel is open"))
+	}
+	return c.channel
+}
+
+func (c *channelWrapper) Stdout() io.Writer {
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: stdout requested before channel is open"))
+	}
+	return c.channel
+}
+
+func (c *channelWrapper) Stderr() io.Writer {
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: stderr requested before channel is open"))
+	}
+	return c.channel.Stderr()
+}
+
+func (c *channelWrapper) ExitStatus(exitCode uint32) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: exit status sent before channel is open"))
+	}
+	if c.exitSent || c.closed {
+		return
+	}
+	c.exitSent = true
+	if _, err := c.channel.SendRequest(
+		"exit-status",
+		false,
+		ssh.Marshal(exitStatusPayload{
+			ExitStatus: exitCode,
+		})); err != nil {
+		if !errors.Is(err, io.EOF) {
+			c.logger.Debugf("failed to send exit status to client (%v)", err)
+		}
+	}
+}
+
+func (c *channelWrapper) ExitSignal(signal string, coreDumped bool, errorMessage string, languageTag string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: exit signal sent before channel is open"))
+	}
+	if c.exitSignalSent || c.closed {
+		return
+	}
+	c.exitSignalSent = true
+	if _, err := c.channel.SendRequest(
+		"exit-signal",
+		false,
+		ssh.Marshal(exitSignalPayload{
+			Signal: signal,
+			CoreDumped: coreDumped,
+			ErrorMessage: errorMessage,
+			LanguageTag: languageTag,
+		})); err != nil {
+		if !errors.Is(err, io.EOF) {
+			c.logger.Debugf("failed to send exit status to client (%v)", err)
+		}
+	}
+}
+
+func (c *channelWrapper) CloseWrite() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: channel closed for writing before channel is open"))
+	}
+	if c.closed || c.closedWrite {
+		return nil
+	}
+	return c.channel.CloseWrite()
+}
+
+func (c *channelWrapper) Close() error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.channel == nil {
+		panic(fmt.Errorf("BUG: channel closed before channel is open"))
+	}
+	c.closed = true
+	return c.channel.Close()
+}
+
+func (c *channelWrapper) onClose() {
+	c.closed = true
+}
+
 func (s *server) handleSessionChannel(connectionID string, channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
-	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData())
+	channelCallbacks := &channelWrapper{
+		logger: s.logger,
+		lock: &sync.Mutex{},
+	}
+	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData(), channelCallbacks)
 	if rejection != nil {
 		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
 			s.logger.Debugf("failed to send session channel rejection", err)
@@ -355,15 +470,18 @@ func (s *server) handleSessionChannel(connectionID string, channelID uint64, new
 		s.logger.Debugf("failed to accept session channel (%v)", err)
 		return
 	}
+	channelCallbacks.channel = channel
 	nextRequestID := uint64(0)
 	for {
 		request, ok := <-requests
 		if !ok {
+			channelCallbacks.onClose()
+			handlerChannel.OnClose()
 			break
 		}
 		requestID := nextRequestID
 		nextRequestID++
-		s.handleChannelRequest(shutdownHandlerID, requestID, request, channel, handlerChannel)
+		s.handleChannelRequest(requestID, request, handlerChannel)
 	}
 }
 
@@ -419,7 +537,11 @@ func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, er
 	}
 }
 
-func (s *server) handleChannelRequest(shutdownHandlerID string, requestID uint64, request *ssh.Request, sshChannel ssh.Channel, sessionChannel SessionChannelHandler) {
+func (s *server) handleChannelRequest(
+	requestID uint64,
+	request *ssh.Request,
+	sessionChannel SessionChannelHandler,
+) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
 			if err := request.Reply(
@@ -427,24 +549,6 @@ func (s *server) handleChannelRequest(shutdownHandlerID string, requestID uint64
 				[]byte(message),
 			); err != nil {
 				s.logger.Debugf("failed to send reply (%v)", err)
-			}
-		}
-	}
-	onExit := func(exitCode ExitStatus) {
-		s.shutdownHandlers.Unregister(shutdownHandlerID)
-		if _, err := sshChannel.SendRequest(
-			"exit-status",
-			false,
-			ssh.Marshal(exitStatusPayload{
-				exitStatus: exitCode,
-			})); err != nil {
-			if !errors.Is(err, io.EOF) {
-				s.logger.Debugf("failed to send exit status to client (%v)", err)
-			}
-		}
-		if err := sshChannel.Close(); err != nil {
-			if !errors.Is(err, io.EOF) {
-				s.logger.Debugf("failed to close SSH channel (%v)", err)
 			}
 		}
 	}
@@ -464,9 +568,7 @@ func (s *server) handleChannelRequest(shutdownHandlerID string, requestID uint64
 		requestID,
 		requestType(request.Type),
 		payload,
-		sshChannel,
 		sessionChannel,
-		onExit,
 	); err != nil {
 		reply(false, err.Error(), err)
 		return
@@ -478,9 +580,7 @@ func (s *server) handleDecodedChannelRequest(
 	requestID uint64,
 	requestType requestType,
 	payload interface{},
-	channel ssh.Channel,
 	sessionChannel SessionChannelHandler,
-	onExit func(exitCode ExitStatus),
 ) error {
 	switch requestType {
 	case requestTypeEnv:
@@ -488,11 +588,11 @@ func (s *server) handleDecodedChannelRequest(
 	case requestTypePty:
 		return s.onPtyRequest(requestID, sessionChannel, payload)
 	case requestTypeShell:
-		return s.onShell(requestID, sessionChannel, channel, onExit)
+		return s.onShell(requestID, sessionChannel)
 	case requestTypeExec:
-		return s.onExec(requestID, sessionChannel, payload, channel, onExit)
+		return s.onExec(requestID, sessionChannel, payload)
 	case requestTypeSubsystem:
-		return s.onSubsystem(requestID, sessionChannel, payload, channel, onExit)
+		return s.onSubsystem(requestID, sessionChannel, payload)
 	case requestTypeWindow:
 		return s.onChannel(requestID, sessionChannel, payload)
 	case requestTypeSignal:
@@ -521,24 +621,23 @@ func (s *server) onPtyRequest(requestID uint64, sessionChannel SessionChannelHan
 	)
 }
 
-func (s *server) onShell(requestID uint64, sessionChannel SessionChannelHandler, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+func (s *server) onShell(
+	requestID uint64,
+	sessionChannel SessionChannelHandler,
+) error {
 	return sessionChannel.OnShell(
 		requestID,
-		channel,
-		channel,
-		channel.Stderr(),
-		onExit,
 	)
 }
 
-func (s *server) onExec(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+func (s *server) onExec(
+	requestID uint64,
+	sessionChannel SessionChannelHandler,
+	payload interface{},
+) error {
 	return sessionChannel.OnExecRequest(
 		requestID,
 		payload.(execRequestPayload).Exec,
-		channel,
-		channel,
-		channel.Stderr(),
-		onExit,
 	)
 }
 
@@ -549,14 +648,14 @@ func (s *server) onSignal(requestID uint64, sessionChannel SessionChannelHandler
 	)
 }
 
-func (s *server) onSubsystem(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}, channel ssh.Channel, onExit func(exitCode ExitStatus)) error {
+func (s *server) onSubsystem(
+	requestID uint64,
+	sessionChannel SessionChannelHandler,
+	payload interface{},
+) error {
 	return sessionChannel.OnSubsystem(
 		requestID,
 		payload.(subsystemRequestPayload).Subsystem,
-		channel,
-		channel,
-		channel.Stderr(),
-		onExit,
 	)
 }
 
