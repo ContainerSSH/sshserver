@@ -104,7 +104,7 @@ type testClientSession struct {
 }
 
 func (t *testClientSession) ReadRemaining() {
-	t.logger.Debugf("Reading reaining bytes from stdout...")
+	t.logger.Debugf("Reading remaining bytes from stdout...")
 	for {
 		data := make([]byte, 1024)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -117,7 +117,7 @@ func (t *testClientSession) ReadRemaining() {
 }
 
 func (t *testClientSession) ReadRemainingStderr() {
-	t.logger.Debugf("Reading reaining bytes from stderr...")
+	t.logger.Debugf("Reading remaining bytes from stderr...")
 	for {
 		data := make([]byte, 1024)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
