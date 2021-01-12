@@ -132,8 +132,7 @@ func (t *testClientSession) ReadRemainingStderr() {
 func (t *testClientSession) Type(data []byte) error {
 	t.logger.Debugf("Typing on stdin with sleep and readback: %s", data)
 	for _, b := range data {
-		_, err := t.Write([]byte{b})
-		if err != nil {
+		if _, err := t.Write([]byte{b}); err != nil {
 			return err
 		}
 		readBack := make([]byte, 1)
@@ -141,8 +140,25 @@ func (t *testClientSession) Type(data []byte) error {
 		if err != nil {
 			return err
 		}
-		if n != 1 {
-			return fmt.Errorf("failed to read back typed byte")
+		if n == 1 && readBack[0] == '\r' {
+			n, err = t.Read(readBack)
+			if err != nil {
+				return err
+			}
+		}
+		if n != 1 || b != readBack[0] {
+			// Read the rest of the output so we get a useful message:
+			for {
+				readCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+				buf := make([]byte, 1024)
+				n, err := t.ReadCtx(readCtx, buf)
+				cancel()
+				if err != nil {
+					break
+				}
+				readBack = append(readBack, buf[:n]...)
+			}
+			return fmt.Errorf("failed to read back typed byte '%s' found: %s", []byte{b}, readBack)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

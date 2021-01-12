@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/containerssh/log"
 )
 
 // ConformanceTestBackendFactory is a method to creating a network connection handler for testing purposes.
-type ConformanceTestBackendFactory = func() (NetworkConnectionHandler, error)
+type ConformanceTestBackendFactory = func(logger log.Logger) (NetworkConnectionHandler, error)
 
 // RunConformanceTests runs a suite of conformance tests against the provided backends supporting a standard
 // Linux shell.
@@ -41,7 +43,9 @@ type conformanceTestSuite struct {
 
 func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 	t.Parallel()
-	backend, err := c.backendFactory()
+	logger := getLogger(t)
+
+	backend, err := c.backendFactory(logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +55,11 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 	srv := NewTestServer(NewTestAuthenticationHandler(
 		newHandler(backend),
 		user,
-	))
+	), logger)
 	srv.Start()
 	defer srv.Stop(10 * time.Second)
 
-	client := NewTestClient(srv, user)
+	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +71,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 	if err := session.Exec("echo \"Hello world!\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -83,7 +87,8 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 
 func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 	t.Parallel()
-	backend, err := c.backendFactory()
+	logger := getLogger(t)
+	backend, err := c.backendFactory(logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,11 +98,11 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 	srv := NewTestServer(NewTestAuthenticationHandler(
 		newHandler(backend),
 		user,
-	))
+	), logger)
 	srv.Start()
 	defer srv.Stop(10 * time.Second)
 
-	client := NewTestClient(srv, user)
+	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +117,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 	if err := session.Exec("echo \"$FOO\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -128,7 +133,8 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 
 func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 	t.Parallel()
-	backend, err := c.backendFactory()
+	logger := getLogger(t)
+	backend, err := c.backendFactory(logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,11 +144,11 @@ func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 	srv := NewTestServer(NewTestAuthenticationHandler(
 		newHandler(backend),
 		user,
-	))
+	), logger)
 	srv.Start()
 	defer srv.Stop(10 * time.Second)
 
-	client := NewTestClient(srv, user)
+	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
 	if err != nil {
 		t.Fatal(err)
@@ -178,12 +184,7 @@ func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 }
 
 func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestClientSession) bool {
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	if err := session.WaitForStdout(timeout, []byte("# ")); err != nil {
-		t.Error(err)
-		return true
-	}
+	session.ReadRemaining()
 	if !shellCommand(t, session, "tput cols", "80\r\n") {
 		return true
 	}
@@ -194,6 +195,10 @@ func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestCl
 		t.Error(err)
 		return true
 	}
+	// Give Kubernetes time to realize the window change. Docker doesn't need this.
+	time.Sleep(time.Second)
+	// Read any output after the window change
+	session.ReadRemaining()
 	if !shellCommand(t, session, "tput cols", "120\r\n") {
 		return true
 	}
@@ -211,7 +216,8 @@ func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestCl
 
 func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 	t.Parallel()
-	backend, err := c.backendFactory()
+	logger := getLogger(t)
+	backend, err := c.backendFactory(logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,11 +227,11 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 	srv := NewTestServer(NewTestAuthenticationHandler(
 		newHandler(backend),
 		user,
-	))
+	), logger)
 	srv.Start()
 	defer srv.Stop(10 * time.Second)
 
-	client := NewTestClient(srv, user)
+	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +254,8 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 
 func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	t.Parallel()
-	backend, err := c.backendFactory()
+	logger := getLogger(t)
+	backend, err := c.backendFactory(logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,11 +265,11 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	srv := NewTestServer(NewTestAuthenticationHandler(
 		newHandler(backend),
 		user,
-	))
+	), logger)
 	srv.Start()
 	defer srv.Stop(10 * time.Second)
 
-	client := NewTestClient(srv, user)
+	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +303,7 @@ func shellCommand(t *testing.T, session TestClientSession, command string, expec
 		t.Error(err)
 		return false
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(
 		timeout,
@@ -306,13 +313,7 @@ func shellCommand(t *testing.T, session TestClientSession, command string, expec
 		return false
 	}
 	if !strings.Contains("exit", command) {
-		if err := session.WaitForStdout(
-			timeout,
-			[]byte("# "),
-		); err != nil {
-			t.Error(err)
-			return false
-		}
+		session.ReadRemaining()
 	}
 	return true
 }

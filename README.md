@@ -68,3 +68,95 @@ A sample implementation can be found in the [test code](server_test.go) at the b
 ## About the `connectionID`
 
 The `connectionID` parameter in the `OnNetworkConnection()` is a hexadecimal string uniquely identifying a connection. This ID can be used to track connection-related information across multiple subsystems (e.g. logs, audit logs, authentication and configuration requests, etc.)
+
+## Testing a backend
+
+This library contains a testing toolkit for running Linux commands against a backend. The primary resource for these tests will be the [conformance tests](test_conformance.go). To use these you must implement a set of factories that fulfill the following signature: `func(logger log.Logger) (sshserver.NetworkConnectionHandler, error)`.
+
+These factories can then be used as follows:
+
+```go
+func TestConformance(t *testing.T) {
+		var factories = map[string]func() (
+            sshserver.NetworkConnectionHandler,
+            error,
+        ) {
+    		"some-method": func(
+                logger log.Logger,
+            ) (sshserver.NetworkConnectionHandler, error) {
+    			
+    		},
+    		"some-other-method": func(
+                logger log.Logger,
+            ) (sshserver.NetworkConnectionHandler, error) {
+    			
+    		},
+    	}
+    
+    	sshserver.RunConformanceTests(t, factories)
+}
+```
+
+The conformance tests will then attempt to execute a series of Linux interactions against the network connection handler and report features that have failed.
+
+Alternatively, you can also use the components that make up the conformance tests separately.
+
+### Creating a test user
+
+The first step of using the test utilities is creating a test user. This can be done using the following calls:
+
+```go
+user := sshserver.NewTestUser(
+    "test",
+)
+``` 
+
+This use can then be configured with a random password using `RandomPassword()`, or set credentials using `SetPassword()` or `GenerateKey()`. These test users can then be passed to the test server or test client.
+
+### Creating a test client
+
+The test SSH client offers functionality over the Golang SSH client that helps with testing. The test client can be created as follows:
+
+```go
+sshclient := NewTestClient(
+    serverIPAndPort,
+    serverHostPrivateKey,
+    user *TestUser,
+    logger log.Logger,
+)
+```
+
+Note that you must pass the servers private key in PEM format which will be used to extract the the public key for validation. This makes the client unsuitable for purposes other than testing.
+
+The test client can then be used to interact with the server. The client is described in [test_client.go](test_client.go) and functions can be discovered using code completion in the IDE.
+
+### Creating a test server
+
+We also provide a simplified test server that you can plug in any backend:
+
+```go
+srv := NewTestServer(
+    handler,
+    logger,
+)
+```
+
+You can then start the server in the background and subsequently stop it:
+
+```go
+srv.Start()
+defer srv.Stop(10 * time.Second)
+```
+
+### Creating a simple authenticating handler
+
+We also provide an authentication handler that can be used to authenticate using the test users:
+
+```go
+handler := NewTestAuthenticationHandler(
+    handler,
+    user1,
+    user2,
+    user3,
+)
+```

@@ -3,7 +3,6 @@ package sshserver
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -29,18 +28,7 @@ type TestServer interface {
 }
 
 // NewTestServer is a simplified API to start and stop a test server. The test server always listens on 127.0.0.1:2222
-func NewTestServer(handler Handler) TestServer {
-	logger, err := log.New(
-		log.Config{
-			Level:  log.LevelDebug,
-			Format: log.FormatText,
-		},
-		"ssh",
-		os.Stdout,
-	)
-	if err != nil {
-		panic(err)
-	}
+func NewTestServer(handler Handler, logger log.Logger) TestServer {
 	config := Config{}
 	structutils.Defaults(&config)
 

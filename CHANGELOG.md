@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.15: Testing framework
+
+This release adds a wide range of testing utilities that can be used to construct an SSH server or client for testing purposes.
+
 ## 0.9.14: Fixed incorrect request types
 
 In the previous version the SSH server would listen for several incorrect request types, for example PTY, signals, and subsystems. These are now fixed.
