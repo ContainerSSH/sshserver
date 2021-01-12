@@ -6,20 +6,24 @@ import (
 	"time"
 
 	"github.com/containerssh/sshserver"
+
+	"github.com/containerssh/log"
 )
 
 func TestProperShutdown(t *testing.T) {
 	user := sshserver.NewTestUser("foo")
 	user.RandomPassword()
+	logger := log.GetTestLogger(t)
 	testServer := sshserver.NewTestServer(
 		sshserver.NewTestAuthenticationHandler(
 			sshserver.NewTestHandler(),
 			user,
 		),
+		logger,
 	)
 	testServer.Start()
 
-	testClient := sshserver.NewTestClient(testServer, user)
+	testClient := sshserver.NewTestClient(testServer.GetListen(), testServer.GetHostKey(), user, logger)
 	connection := testClient.MustConnect()
 	session := connection.MustSession()
 	session.MustRequestPTY("xterm", 80, 25)
