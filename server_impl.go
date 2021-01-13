@@ -146,9 +146,54 @@ func (s *server) createPubKeyAuthenticator(
 	}
 }
 
+func (s *server) createKeyboardInteractiveHandler(handlerNetworkConnection *networkConnectionWrapper) func(
+	conn ssh.ConnMetadata,
+	challenge ssh.KeyboardInteractiveChallenge,
+) (*ssh.Permissions, error) {
+	return func(
+		conn ssh.ConnMetadata,
+		challenge ssh.KeyboardInteractiveChallenge,
+	) (*ssh.Permissions, error) {
+		challengeWrapper := func(
+			instruction string,
+			questions KeyboardInteractiveQuestions,
+		) (answers KeyboardInteractiveAnswers, err error) {
+			if answers.answers == nil {
+				answers.answers = map[string]string{}
+			}
+			var q []string
+			var echos []bool
+			for _, question := range questions {
+				q = append(q, question.Question)
+				echos = append(echos, question.EchoResponse)
+			}
+
+			// user, instruction string, questions []string, echos []bool
+			answerList, err := challenge(conn.User(), instruction, q, echos)
+			for index, rawAnswer := range answerList {
+				question := questions[index]
+				answers.answers[question.getID()] = rawAnswer
+			}
+			return answers, err
+		}
+		authResponse, err := handlerNetworkConnection.OnAuthKeyboardInteractive(conn.User(), challengeWrapper)
+		switch authResponse {
+		case AuthResponseSuccess:
+			return &ssh.Permissions{}, nil
+		case AuthResponseFailure:
+			return nil, fmt.Errorf("authentication failed")
+		case AuthResponseUnavailable:
+			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
+			return nil, fmt.Errorf("authentication currently unavailable")
+		}
+		return nil, fmt.Errorf("authentication currently unavailable")
+	}
+}
+
 func (s *server) createConfiguration(handlerNetworkConnection *networkConnectionWrapper) *ssh.ServerConfig {
 	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection)
 	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection)
+	keyboardInteractiveHandler := s.createKeyboardInteractiveHandler(handlerNetworkConnection)
 	serverConfig := &ssh.ServerConfig{
 		Config: ssh.Config{
 			KeyExchanges: s.cfg.getKex(),
@@ -183,6 +228,22 @@ func (s *server) createConfiguration(handlerNetworkConnection *networkConnection
 			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
 			return permissions, err
 		},
+		KeyboardInteractiveCallback: func(
+			conn ssh.ConnMetadata,
+			challenge ssh.KeyboardInteractiveChallenge,
+		) (*ssh.Permissions, error) {
+			permissions, err := keyboardInteractiveHandler(conn, challenge)
+			if err != nil {
+				return permissions, err
+			}
+			// HACK: check HACKS.md "OnHandshakeSuccess handler"
+			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+			if err != nil {
+				return permissions, err
+			}
+			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+			return permissions, err
+		},
 		ServerVersion:  s.cfg.ServerVersion,
 		BannerCallback: func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
 	}
@@ -199,8 +260,7 @@ type networkConnectionWrapper struct {
 }
 
 func (n *networkConnectionWrapper) OnShutdown(shutdownContext context.Context) {
-
-	go n.sshConnectionHandler.OnShutdown(shutdownContext)
+	n.sshConnectionHandler.OnShutdown(shutdownContext)
 }
 
 func (s *server) handleConnection(conn net.Conn) {
@@ -214,7 +274,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	}
 	shutdownHandlerID := fmt.Sprintf("network-%s", connectionID)
 	s.shutdownHandlers.Register(shutdownHandlerID, handlerNetworkConnection)
-	s.logger.Debugf("client connected: %s", addr.IP.String())
+	s.logger.Debugf("Client connected: %s", addr.IP.String())
 
 	// HACK: check HACKS.md "OnHandshakeSuccess handler"
 	wrapper := networkConnectionWrapper{
@@ -238,7 +298,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	s.wg.Add(1)
 	go func() {
 		_ = sshConn.Wait()
-		s.logger.Debugf("client disconnected: %s", addr.IP.String())
+		s.logger.Debugf("Client disconnected: %s", addr.IP.String())
 		s.shutdownHandlers.Unregister(shutdownHandlerID)
 		s.shutdownHandlers.Unregister(sshShutdownHandlerID)
 		handlerNetworkConnection.OnDisconnect()
@@ -329,10 +389,10 @@ type exitStatusPayload struct {
 }
 
 type exitSignalPayload struct {
-	Signal string
-	CoreDumped bool
+	Signal       string
+	CoreDumped   bool
 	ErrorMessage string
-	LanguageTag string
+	LanguageTag  string
 }
 
 type requestType string
@@ -414,10 +474,10 @@ func (c *channelWrapper) ExitSignal(signal string, coreDumped bool, errorMessage
 		"exit-signal",
 		false,
 		ssh.Marshal(exitSignalPayload{
-			Signal: signal,
-			CoreDumped: coreDumped,
+			Signal:       signal,
+			CoreDumped:   coreDumped,
 			ErrorMessage: errorMessage,
-			LanguageTag: languageTag,
+			LanguageTag:  languageTag,
 		})); err != nil {
 		if !errors.Is(err, io.EOF) {
 			c.logger.Debugf("failed to send exit status to client (%v)", err)
@@ -454,7 +514,7 @@ func (c *channelWrapper) onClose() {
 func (s *server) handleSessionChannel(connectionID string, channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
 	channelCallbacks := &channelWrapper{
 		logger: s.logger,
-		lock: &sync.Mutex{},
+		lock:   &sync.Mutex{},
 	}
 	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData(), channelCallbacks)
 	if rejection != nil {

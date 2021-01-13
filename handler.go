@@ -2,6 +2,7 @@ package sshserver
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 
@@ -43,7 +44,54 @@ const (
 	AuthResponseUnavailable AuthResponse = 3
 )
 
-// NetworkConnectionHandler is an object that is used to represent the underlying network connection and the SSH handshake.
+// KeyboardInteractiveQuestion contains a question issued to a user as part of the keyboard-interactive exchange.
+type KeyboardInteractiveQuestion struct {
+	// ID is an optional opaque ID that can be used to identify a question in an answer. Can be left empty.
+	ID string
+	// Question is the question text sent to the user.
+	Question string
+	// EchoResponse should be set to true to show the typed response to the user.
+	EchoResponse bool
+}
+
+func (k *KeyboardInteractiveQuestion) getID() string {
+	if k.ID != "" {
+		return k.ID
+	}
+	return k.Question
+}
+
+// KeyboardInteractiveQuestions is a list of questions for keyboard-interactive authentication
+type KeyboardInteractiveQuestions []KeyboardInteractiveQuestion
+
+func (k *KeyboardInteractiveQuestions) Add(question KeyboardInteractiveQuestion) {
+	*k = append(*k, question)
+}
+
+// KeyboardInteractiveAnswers is a set of answer to a keyboard-interactive challenge.
+type KeyboardInteractiveAnswers struct {
+	// KeyboardInteractiveQuestion is the original question that was answered.
+	answers map[string]string
+}
+
+// Get returns the answer for a question, or an error if no answer is present.
+func (k *KeyboardInteractiveAnswers) Get(question KeyboardInteractiveQuestion) (string, error) {
+	if val, ok := k.answers[question.getID()]; ok {
+		return val, nil
+	}
+	return "", fmt.Errorf("no answer for question")
+}
+
+// GetByQuestionText returns the answer for a question text, or an error if no answer is present.
+func (k *KeyboardInteractiveAnswers) GetByQuestionText(question string) (string, error) {
+	if val, ok := k.answers[question]; ok {
+		return val, nil
+	}
+	return "", fmt.Errorf("no answer for question")
+}
+
+// NetworkConnectionHandler is an object that is used to represent the underlying network connection and the SSH
+// handshake.
 type NetworkConnectionHandler interface {
 	// OnAuthPassword is called when a user attempts a password authentication. The implementation must always supply
 	//                AuthResponse and may supply error as a reason description.
@@ -53,6 +101,17 @@ type NetworkConnectionHandler interface {
 	//                AuthResponse and may supply error as a reason description. The pubKey parameter is an SSH key in
 	//               the form of "ssh-rsa KEY HERE".
 	OnAuthPubKey(username string, pubKey string) (response AuthResponse, reason error)
+
+	// OnAuthKeyboardInteractive is a callback for interactive authentication. The implementer will be passed a callback
+	// function that can be used to issue challenges to the user. These challenges can, but do not have to contain
+	// questions.
+	OnAuthKeyboardInteractive(
+		user string,
+		challenge func(
+			instruction string,
+			questions KeyboardInteractiveQuestions,
+		) (answers KeyboardInteractiveAnswers, err error),
+	) (response AuthResponse, reason error)
 
 	// OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication
 	//                   failure. After this method is the connection will be closed and the OnDisconnect method will be

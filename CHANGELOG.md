@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.16: Keyboard-interactive authentication
+
+This release adds support for keyboard-interactive authentication.
+
 ## 0.9.15: Testing framework
 
 This release adds a wide range of testing utilities that can be used to construct an SSH server or client for testing purposes.

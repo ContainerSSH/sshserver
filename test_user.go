@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -15,16 +16,18 @@ import (
 // NewTestUser creates a user that can be used with NewTestHandler and NewTestClient.
 func NewTestUser(username string) *TestUser {
 	return &TestUser{
-		username: username,
+		username:            username,
+		keyboardInteractive: map[string]string{},
 	}
 }
 
 // TestUser is a container for a username, a password and public keys
 type TestUser struct {
-	username       string
-	password       string
-	privateKeys    []*rsa.PrivateKey
-	authorizedKeys []string
+	username            string
+	password            string
+	keyboardInteractive map[string]string
+	privateKeys         []*rsa.PrivateKey
+	authorizedKeys      []string
 }
 
 // Username returns the username of this user.
@@ -40,6 +43,23 @@ func (u *TestUser) Password() string {
 // SetPassword sets a specific password for this user.
 func (u *TestUser) SetPassword(password string) {
 	u.password = password
+}
+
+// AddKeyboardInteractiveChallengeResponse adds a challenge with an expected response for keyboard-interactive
+// authentication.
+func (u *TestUser) AddKeyboardInteractiveChallengeResponse(challenge string, expectedResponse string) {
+	u.keyboardInteractive[challenge] = expectedResponse
+}
+
+// KeyboardInteractiveChallengeResponse returns a construct of KeyboardInteractiveQuestions
+func (u *TestUser) KeyboardInteractiveChallengeResponse() (questions KeyboardInteractiveQuestions) {
+	for question := range u.keyboardInteractive {
+		questions = append(questions, KeyboardInteractiveQuestion{
+			Question:     question,
+			EchoResponse: false,
+		})
+	}
+	return
 }
 
 // RandomPassword generates a random password for this user.
@@ -105,5 +125,19 @@ func (u *TestUser) getAuthMethods() []ssh.AuthMethod {
 		pubKeys = append(pubKeys, signer)
 	}
 	result = append(result, ssh.PublicKeys(pubKeys...))
+
+	if len(u.keyboardInteractive) > 0 {
+		result = append(result, ssh.KeyboardInteractive(
+			func(user, instruction string, questions []string, echos []bool) (answers []string, err error) {
+				for _, question := range questions {
+					if answer, ok := u.keyboardInteractive[question]; ok {
+						answers = append(answers, answer)
+					} else {
+						return nil, fmt.Errorf("unexpected keybord-interactive challenge: %s", question)
+					}
+				}
+				return answers, nil
+			}))
+	}
 	return result
 }

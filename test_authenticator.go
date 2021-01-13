@@ -2,6 +2,7 @@ package sshserver
 
 import (
 	"context"
+	"fmt"
 	"net"
 )
 
@@ -31,7 +32,10 @@ func (t *testAuthenticationHandler) OnShutdown(ctx context.Context) {
 	t.backend.OnShutdown(ctx)
 }
 
-func (t *testAuthenticationHandler) OnNetworkConnection(client net.TCPAddr, connectionID string) (NetworkConnectionHandler, error) {
+func (t *testAuthenticationHandler) OnNetworkConnection(
+	client net.TCPAddr,
+	connectionID string,
+) (NetworkConnectionHandler, error) {
 	backend, err := t.backend.OnNetworkConnection(client, connectionID)
 	if err != nil {
 		return nil, err
@@ -46,6 +50,49 @@ func (t *testAuthenticationHandler) OnNetworkConnection(client net.TCPAddr, conn
 type testAuthenticationNetworkHandler struct {
 	rootHandler *testAuthenticationHandler
 	backend     NetworkConnectionHandler
+}
+
+func (t *testAuthenticationNetworkHandler) OnAuthKeyboardInteractive(
+	username string,
+	challenge func(
+		instruction string,
+		questions KeyboardInteractiveQuestions,
+	) (answers KeyboardInteractiveAnswers, err error),
+) (response AuthResponse, reason error) {
+	var foundUser *TestUser
+	for _, user := range t.rootHandler.users {
+		if user.Username() == username {
+			foundUser = user
+			break
+		}
+	}
+	if foundUser == nil {
+		return AuthResponseFailure, fmt.Errorf("user not found")
+	}
+
+	var questions []KeyboardInteractiveQuestion
+	for question := range foundUser.keyboardInteractive {
+		questions = append(questions, KeyboardInteractiveQuestion{
+			ID:           question,
+			Question:     question,
+			EchoResponse: false,
+		})
+	}
+
+	answers, err := challenge("", questions)
+	if err != nil {
+		return AuthResponseFailure, err
+	}
+	for question, expectedAnswer := range foundUser.keyboardInteractive {
+		answerText, err := answers.GetByQuestionText(question)
+		if err != nil {
+			return AuthResponseFailure, err
+		}
+		if answerText != expectedAnswer {
+			return AuthResponseFailure, fmt.Errorf("invalid response")
+		}
+	}
+	return AuthResponseSuccess, nil
 }
 
 func (t *testAuthenticationNetworkHandler) OnDisconnect() {

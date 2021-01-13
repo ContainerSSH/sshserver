@@ -51,6 +51,19 @@ func (a *AbstractNetworkConnectionHandler) OnAuthPubKey(_ string, _ string) (res
 	return AuthResponseUnavailable, nil
 }
 
+// OnAuthKeyboardInteractive is a callback for interactive authentication. The implementer will be passed a callback
+// function that can be used to issue challenges to the user. These challenges can, but do not have to contain
+// questions.
+func (a *AbstractNetworkConnectionHandler) OnAuthKeyboardInteractive(
+	_ string,
+	_ func(
+		instruction string,
+		questions KeyboardInteractiveQuestions,
+	) (answers KeyboardInteractiveAnswers, err error),
+) (response AuthResponse, reason error) {
+	return AuthResponseUnavailable, nil
+}
+
 // OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication
 //                   failure. After this method is the connection will be closed and the OnDisconnect method will be
 //                   called.

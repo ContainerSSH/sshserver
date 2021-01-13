@@ -98,6 +98,40 @@ func TestAuthFailed(t *testing.T) {
 	}
 }
 
+func TestAuthKeyboardInteractive(t *testing.T) {
+	user1 := sshserver.NewTestUser("test")
+	user1.AddKeyboardInteractiveChallengeResponse("foo", "bar")
+
+	user2 := sshserver.NewTestUser("test")
+	user2.AddKeyboardInteractiveChallengeResponse("foo", "baz")
+
+	logger := log.GetTestLogger(t)
+	srv := sshserver.NewTestServer(
+		sshserver.NewTestAuthenticationHandler(
+			sshserver.NewTestHandler(),
+			user2,
+		),
+		logger,
+	)
+	srv.Start()
+
+	client1 := sshserver.NewTestClient(srv.GetListen(), srv.GetHostKey(), user1, logger)
+	conn, err := client1.Connect()
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("invalid keyboard-interactive authentication did not result in an error")
+	}
+
+	client2 := sshserver.NewTestClient(srv.GetListen(), srv.GetHostKey(), user2, logger)
+	conn, err = client2.Connect()
+	if err != nil {
+		t.Fatalf("valid keyboard-interactive authentication resulted in an error (%v)", err)
+	}
+	_ = conn.Close()
+
+	defer srv.Stop(10 * time.Second)
+}
+
 func TestSessionSuccess(t *testing.T) {
 	server := newServerHelper(
 		t,
@@ -205,6 +239,7 @@ func TestPubKey(t *testing.T) {
 	assert.Equal(t, 0, exitStatus)
 	assert.Equal(t, []byte("Hello world!"), reply)
 }
+
 //endregion
 
 //region Helper
