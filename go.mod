@@ -8,7 +8,7 @@ require (
 	github.com/containerssh/structutils v0.9.0
 	github.com/containerssh/unixutils v0.9.0
 	github.com/google/uuid v1.1.4
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
 	golang.org/x/sys v0.0.0-20210113181707-4bcb84eeeb78 // indirect
 )
