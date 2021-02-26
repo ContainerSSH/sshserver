@@ -1,0 +1,27 @@
+package sshserver
+
+const (
+	MConnected                = "SSH_CONNECTED"
+	MDisconnected             = "SSH_DISCONNECTED"
+	EHandshakeFailed          = "SSH_HANDSHAKE_FAILED"
+	MHandshakeSuccessful      = "SSH_HANDSHAKE_SUCCESSFUL"
+	EUnsupportedGlobalRequest = "SSH_UNSUPPORTED_GLOBAL_REQUEST"
+	EReplyFailed              = "SSH_REPLY_SEND_FAILED"
+	EUnsupportedChannelType   = "SSH_UNSUPPORTED_CHANNEL_TYPE"
+	EAlreadyRunning           = "SSH_ALREADY_RUNNING"
+	EStartFailed              = "SSH_START_FAILED"
+	EListenCloseFailed        = "SSH_LISTEN_CLOSE_FAILED"
+	MNewChannel               = "SSH_NEW_CHANNEL"
+	MNewChannelRejected       = "SSH_NEW_CHANNEL_REJECTED"
+	MServiceAvailable         = "SSH_AVAILABLE"
+	EAuthUnavailable          = "SSH_AUTH_UNAVAILABLE"
+	EAuthFailed               = "SSH_AUTH_FAILED"
+	EAuthSuccessful           = "SSH_AUTH_SUCCESSFUL"
+	EExitCodeFailed           = "SSH_EXIT_CODE_FAILED"
+	EDecodeFailed             = "SSH_DECODE_FAILED"
+	MExit                     = "SSH_EXIT"
+	MExitSignal               = "SSH_EXIT_SIGNAL"
+	MChannelRequest           = "SSH_CHANNEL_REQUEST"
+	MChannelRequestFailed     = "SSH_CHANNEL_REQUEST_FAILED"
+	MChannelRequestSuccessful = "SSH_CHANNEL_REQUEST_SUCCESSFUL"
+)

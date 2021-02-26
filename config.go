@@ -31,7 +31,7 @@ type Config struct {
 	// KexAlgorithms are the key exchange algorithms offered to the client.
 	KexAlgorithms []Kex `json:"kex" yaml:"kex" default:"[\"curve25519-sha256@libssh.org\",\"ecdh-sha2-nistp521\",\"ecdh-sha2-nistp384\",\"ecdh-sha2-nistp256\"]" comment:"Key exchange algorithms to use"`
 	// MACs are the MAC algorithms offered to the client.
-	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\",\"hmac-sha1\",\"hmac-sha1-96\"]" comment:"MAC algorithms to use"`
+	MACs []MAC `json:"macs" yaml:"macs" default:"[\"hmac-sha2-256-etm@openssh.com\",\"hmac-sha2-256\"]" comment:"MAC algorithms to use"`
 	// Banner is the banner sent to the client on connecting.
 	Banner string `json:"banner" yaml:"banner" comment:"Host banner to show after the username" default:""`
 	// HostKeys are the host keys either in PEM format, or filenames to load.

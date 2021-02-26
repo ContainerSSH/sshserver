@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -30,15 +29,7 @@ func TestReadyRejection(t *testing.T) {
 		assert.Fail(t, "failed to generate host key", err)
 		return
 	}
-	logger, err := log.New(
-		log.Config{
-			Level:  log.LevelDebug,
-			Format: log.FormatText,
-		},
-		"ssh",
-		os.Stdout,
-	)
-	assert.NoError(t, err)
+	logger := log.NewTestLogger(t)
 	handler := &rejectHandler{}
 
 	server, err := sshserver.New(config, handler, logger)
@@ -65,7 +56,7 @@ func TestAuthFailed(t *testing.T) {
 		},
 		map[string]string{},
 	)
-	hostKey, err := server.start()
+	hostKey, err := server.start(t)
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
@@ -105,7 +96,7 @@ func TestAuthKeyboardInteractive(t *testing.T) {
 	user2 := sshserver.NewTestUser("test")
 	user2.AddKeyboardInteractiveChallengeResponse("foo", "baz")
 
-	logger := log.GetTestLogger(t)
+	logger := log.NewTestLogger(t)
 	srv := sshserver.NewTestServer(
 		sshserver.NewTestAuthenticationHandler(
 			sshserver.NewTestHandler(),
@@ -141,7 +132,7 @@ func TestSessionSuccess(t *testing.T) {
 		},
 		map[string]string{},
 	)
-	hostKey, err := server.start()
+	hostKey, err := server.start(t)
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
@@ -174,7 +165,7 @@ func TestSessionError(t *testing.T) {
 		},
 		map[string]string{},
 	)
-	hostKey, err := server.start()
+	hostKey, err := server.start(t)
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
@@ -216,7 +207,7 @@ func TestPubKey(t *testing.T) {
 			"foo": authorizedKey,
 		},
 	)
-	hostKey, err := server.start()
+	hostKey, err := server.start(t)
 	if err != nil {
 		assert.Fail(t, "failed to start ssh server", err)
 		return
@@ -368,7 +359,7 @@ type serverHelper struct {
 	receivedChannel chan struct{}
 }
 
-func (h *serverHelper) start() (hostKey []byte, err error) {
+func (h *serverHelper) start(t *testing.T) (hostKey []byte, err error) {
 	if h.server != nil {
 		return nil, fmt.Errorf("server already running")
 	}
@@ -382,17 +373,7 @@ func (h *serverHelper) start() (hostKey []byte, err error) {
 		return nil, err
 	}
 	hostKey = private.PublicKey().Marshal()
-	logger, err := log.New(
-		log.Config{
-			Level:  log.LevelDebug,
-			Format: log.FormatText,
-		},
-		"ssh",
-		os.Stdout,
-	)
-	if err != nil {
-		return nil, err
-	}
+	logger := log.NewTestLogger(t)
 	readyChannel := make(chan struct{}, 1)
 	h.shutdownChannel = make(chan struct{}, 1)
 	errChannel := make(chan error, 1)

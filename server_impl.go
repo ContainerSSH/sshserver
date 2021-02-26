@@ -45,7 +45,7 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	s.lock.Unlock()
 
 	if alreadyRunning {
-		return fmt.Errorf("SSH server is already running")
+		return log.NewMessage(EAlreadyRunning, "SSH server is already running")
 	}
 
 	listenConfig := net.ListenConfig{
@@ -54,22 +54,22 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 
 	netListener, err := listenConfig.Listen(lifecycle.Context(), "tcp", s.cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("failed to start SSH server on %s (%w)", s.cfg.Listen, err)
+		return log.Wrap(err, EStartFailed, "failed to start SSH server on %s", s.cfg.Listen)
 	}
 	s.listenSocket = netListener
 	if err := s.handler.OnReady(); err != nil {
 		if err := netListener.Close(); err != nil {
-			s.logger.Warningf("failed to close listen socket after failed startup (%v)", err)
+			s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket after failed startup"))
 		}
 		return err
 	}
 	lifecycle.Running()
-	s.logger.Debugf("SSH server running on %s", s.cfg.Listen)
+	s.logger.Info(log.NewMessage(MServiceAvailable, "SSH server running on %s", s.cfg.Listen))
 
 	go func() {
 		<-lifecycle.Context().Done()
 		if err := s.listenSocket.Close(); err != nil {
-			s.logger.Errorf("failed to close listen socket (%v)", err)
+			s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket"))
 		}
 	}()
 	for {
@@ -111,45 +111,113 @@ func (s *server) disconnectClients(lifecycle service.Lifecycle, allClientsExited
 
 func (s *server) createPasswordAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
+	logger log.Logger,
 ) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 	return func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 		authResponse, err := handlerNetworkConnection.OnAuthPassword(conn.User(), password)
 		switch authResponse {
 		case AuthResponseSuccess:
+			s.logAuthSuccessful(logger, conn, "Password")
 			return &ssh.Permissions{}, nil
 		case AuthResponseFailure:
-			return nil, fmt.Errorf("authentication failed")
+			err = s.wrapAndLogAuthFailure(logger, conn, "Password", err)
+			return nil, err
 		case AuthResponseUnavailable:
-			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
-			return nil, fmt.Errorf("authentication currently unavailable")
+			err = s.wrapAndLogAuthUnavailable(logger, conn, "Password", err)
+			return nil, err
 		}
 		return nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
+func (s *server) wrapAndLogAuthUnavailable(
+	logger log.Logger,
+	conn ssh.ConnMetadata,
+	authMethod string,
+	err error,
+) error {
+	err = log.WrapUser(
+		err,
+		EAuthUnavailable,
+		"Authentication is currently unavailable, please try a different authentication method or try again later.",
+		"%s authentication for user %s currently unavailable.",
+		authMethod,
+		conn.User(),
+	).
+		Label("username", conn.User()).
+		Label("method", strings.ToLower(authMethod)).
+		Label("reason", err.Error())
+	logger.Info(err)
+	return err
+}
+
+func (s *server) wrapAndLogAuthFailure(logger log.Logger, conn ssh.ConnMetadata, authMethod string, err error) error {
+	if err == nil {
+		err = log.UserMessage(
+			EAuthFailed,
+			"Authentication failed.",
+			"%s authentication for user %s failed.",
+			authMethod,
+			conn.User(),
+		).
+			Label("username", conn.User()).
+			Label("method", strings.ToLower(authMethod))
+		logger.Info(err)
+	} else {
+		err = log.WrapUser(
+			err,
+			EAuthFailed,
+			"Authentication failed.",
+			"%s authentication for user %s failed.",
+			authMethod,
+			conn.User(),
+		).
+			Label("username", conn.User()).
+			Label("method", strings.ToLower(authMethod)).
+			Label("reason", err.Error())
+		logger.Info(err)
+	}
+	return err
+}
+
+func (s *server) logAuthSuccessful(logger log.Logger, conn ssh.ConnMetadata, authMethod string) {
+	err := log.UserMessage(
+		EAuthSuccessful,
+		"Authentication successful.",
+		"%s authentication for user %s successful.",
+		authMethod,
+		conn.User(),
+	).Label("username", conn.User()).Label("method", strings.ToLower(authMethod))
+	logger.Info(err)
+}
+
 func (s *server) createPubKeyAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
+	logger log.Logger,
 ) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
 	return func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
 		authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
 		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), authorizedKey)
 		switch authResponse {
 		case AuthResponseSuccess:
+			s.logAuthSuccessful(logger, conn, "Public key")
 			return &ssh.Permissions{}, nil
 		case AuthResponseFailure:
-			return nil, fmt.Errorf("authentication failed")
+			err = s.wrapAndLogAuthFailure(logger, conn, "Public key", err)
+			return nil, err
 		case AuthResponseUnavailable:
-			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
-			return nil, fmt.Errorf("authentication currently unavailable")
+			err = s.wrapAndLogAuthUnavailable(logger, conn, "Public key", err)
+			return nil, err
 		}
+		// This should never happen
 		return nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
-func (s *server) createKeyboardInteractiveHandler(handlerNetworkConnection *networkConnectionWrapper) func(
-	conn ssh.ConnMetadata,
-	challenge ssh.KeyboardInteractiveChallenge,
-) (*ssh.Permissions, error) {
+func (s *server) createKeyboardInteractiveHandler(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 	return func(
 		conn ssh.ConnMetadata,
 		challenge ssh.KeyboardInteractiveChallenge,
@@ -179,78 +247,101 @@ func (s *server) createKeyboardInteractiveHandler(handlerNetworkConnection *netw
 		authResponse, err := handlerNetworkConnection.OnAuthKeyboardInteractive(conn.User(), challengeWrapper)
 		switch authResponse {
 		case AuthResponseSuccess:
+			s.logAuthSuccessful(logger, conn, "Keyboard-interactive")
 			return &ssh.Permissions{}, nil
 		case AuthResponseFailure:
-			return nil, fmt.Errorf("authentication failed")
+			err = s.wrapAndLogAuthFailure(logger, conn, "Keyboard-interactive", err)
+			return nil, err
 		case AuthResponseUnavailable:
-			s.logger.Warningf("authentication backend currently unavailable (%v)", err)
-			return nil, fmt.Errorf("authentication currently unavailable")
+			err = s.wrapAndLogAuthUnavailable(logger, conn, "Keyboard-interactive", err)
+			return nil, err
 		}
 		return nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
-func (s *server) createConfiguration(handlerNetworkConnection *networkConnectionWrapper) *ssh.ServerConfig {
-	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection)
-	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection)
-	keyboardInteractiveHandler := s.createKeyboardInteractiveHandler(handlerNetworkConnection)
+func (s *server) createConfiguration(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) *ssh.ServerConfig {
+	passwordCallback, pubkeyCallback, keyboardInteractiveCallback := s.createAuthenticators(
+		handlerNetworkConnection,
+		logger,
+	)
 	serverConfig := &ssh.ServerConfig{
 		Config: ssh.Config{
 			KeyExchanges: s.cfg.getKex(),
 			Ciphers:      s.cfg.getCiphers(),
 			MACs:         s.cfg.getMACs(),
 		},
-		NoClientAuth: false,
-		MaxAuthTries: 6,
-		PasswordCallback: func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-			permissions, err := passwordHandler(conn, password)
-			if err != nil {
-				return permissions, err
-			}
-			// HACK: check HACKS.md "OnHandshakeSuccess handler"
-			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
-			if err != nil {
-				return permissions, err
-			}
-			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
-			return permissions, err
-		},
-		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			permissions, err := pubKeyHandler(conn, key)
-			if err != nil {
-				return permissions, err
-			}
-			// HACK: check HACKS.md "OnHandshakeSuccess handler"
-			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
-			if err != nil {
-				return permissions, err
-			}
-			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
-			return permissions, err
-		},
-		KeyboardInteractiveCallback: func(
-			conn ssh.ConnMetadata,
-			challenge ssh.KeyboardInteractiveChallenge,
-		) (*ssh.Permissions, error) {
-			permissions, err := keyboardInteractiveHandler(conn, challenge)
-			if err != nil {
-				return permissions, err
-			}
-			// HACK: check HACKS.md "OnHandshakeSuccess handler"
-			sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
-			if err != nil {
-				return permissions, err
-			}
-			handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
-			return permissions, err
-		},
-		ServerVersion:  s.cfg.ServerVersion,
-		BannerCallback: func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
+		NoClientAuth:                false,
+		MaxAuthTries:                6,
+		PasswordCallback:            passwordCallback,
+		PublicKeyCallback:           pubkeyCallback,
+		KeyboardInteractiveCallback: keyboardInteractiveCallback,
+		ServerVersion:               s.cfg.ServerVersion,
+		BannerCallback:              func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
 	}
 	for _, key := range s.hostKeys {
 		serverConfig.AddHostKey(key)
 	}
 	return serverConfig
+}
+
+func (s *server) createAuthenticators(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) (
+	func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error),
+	func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error),
+	func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error),
+) {
+	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection, logger)
+	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection, logger)
+	keyboardInteractiveHandler := s.createKeyboardInteractiveHandler(handlerNetworkConnection, logger)
+	passwordCallback := func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+		permissions, err := passwordHandler(conn, password)
+		if err != nil {
+			return permissions, err
+		}
+		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		if err != nil {
+			return permissions, err
+		}
+		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+		return permissions, err
+	}
+	pubkeyCallback := func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+		permissions, err := pubKeyHandler(conn, key)
+		if err != nil {
+			return permissions, err
+		}
+		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		if err != nil {
+			return permissions, err
+		}
+		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+		return permissions, err
+	}
+	keyboardInteractiveCallback := func(
+		conn ssh.ConnMetadata,
+		challenge ssh.KeyboardInteractiveChallenge,
+	) (*ssh.Permissions, error) {
+		permissions, err := keyboardInteractiveHandler(conn, challenge)
+		if err != nil {
+			return permissions, err
+		}
+		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		if err != nil {
+			return permissions, err
+		}
+		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
+		return permissions, err
+	}
+	return passwordCallback, pubkeyCallback, keyboardInteractiveCallback
 }
 
 // HACK: check HACKS.md "OnHandshakeSuccess handler"
@@ -268,28 +359,37 @@ func (s *server) handleConnection(conn net.Conn) {
 	connectionID := GenerateConnectionID()
 	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, connectionID)
 	if err != nil {
-		s.logger.Infoe(err)
+		s.logger.Info(err)
 		_ = conn.Close()
 		return
 	}
 	shutdownHandlerID := fmt.Sprintf("network-%s", connectionID)
 	s.shutdownHandlers.Register(shutdownHandlerID, handlerNetworkConnection)
-	s.logger.Debugf("Client connected: %s", addr.IP.String())
+	logger := s.logger.
+		WithLabel("remoteAddr", addr.IP.String()).
+		WithLabel("connectionId", connectionID)
+
+	logger.Debug(log.NewMessage(
+		MConnected, "Client connected",
+	))
 
 	// HACK: check HACKS.md "OnHandshakeSuccess handler"
 	wrapper := networkConnectionWrapper{
 		NetworkConnectionHandler: handlerNetworkConnection,
 	}
 
-	sshConn, channels, globalRequests, err := ssh.NewServerConn(conn, s.createConfiguration(&wrapper))
+	sshConn, channels, globalRequests, err := ssh.NewServerConn(conn, s.createConfiguration(&wrapper, logger))
 	if err != nil {
-		s.logger.Debugf("SSH handshake failed for %s (%v)", addr.IP.String(), err)
+		logger.Info(log.Wrap(err, EHandshakeFailed, "SSH handshake failed"))
 		handlerNetworkConnection.OnHandshakeFailed(err)
 		s.shutdownHandlers.Unregister(shutdownHandlerID)
+		logger.Debug(log.NewMessage(MDisconnected, "Client disconnected"))
 		handlerNetworkConnection.OnDisconnect()
 		_ = conn.Close()
 		return
 	}
+	logger = logger.WithLabel("username", sshConn.User())
+	logger.Debug(log.NewMessage(MHandshakeSuccessful, "SSH handshake successful"))
 	s.lock.Lock()
 	s.clientSockets[sshConn] = true
 	sshShutdownHandlerID := fmt.Sprintf("ssh-%s", connectionID)
@@ -298,7 +398,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	s.wg.Add(1)
 	go func() {
 		_ = sshConn.Wait()
-		s.logger.Debugf("Client disconnected: %s", addr.IP.String())
+		logger.Debug(log.NewMessage(MDisconnected, "Client disconnected"))
 		s.shutdownHandlers.Unregister(shutdownHandlerID)
 		s.shutdownHandlers.Unregister(sshShutdownHandlerID)
 		handlerNetworkConnection.OnDisconnect()
@@ -308,11 +408,15 @@ func (s *server) handleConnection(conn net.Conn) {
 	handlerSSHConnection := wrapper.sshConnectionHandler
 	s.shutdownHandlers.Register(sshShutdownHandlerID, handlerSSHConnection)
 
-	go s.handleChannels(connectionID, channels, handlerSSHConnection)
-	go s.handleGlobalRequests(globalRequests, handlerSSHConnection)
+	go s.handleChannels(connectionID, channels, handlerSSHConnection, logger)
+	go s.handleGlobalRequests(globalRequests, handlerSSHConnection, logger)
 }
 
-func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection SSHConnectionHandler) {
+func (s *server) handleGlobalRequests(
+	requests <-chan *ssh.Request,
+	connection SSHConnectionHandler,
+	logger log.Logger,
+) {
 	for {
 		request, ok := <-requests
 		if !ok {
@@ -320,16 +424,22 @@ func (s *server) handleGlobalRequests(requests <-chan *ssh.Request, connection S
 		}
 		requestID := s.nextGlobalRequestID
 		s.nextGlobalRequestID++
+		logger.Debug(log.NewMessage(EUnsupportedGlobalRequest, "Unsupported global request").Label("type", request.Type))
 		connection.OnUnsupportedGlobalRequest(requestID, request.Type, request.Payload)
 		if request.WantReply {
 			if err := request.Reply(false, []byte("request type not supported")); err != nil {
-				s.logger.Debugf("failed to send reply to global request type %s (%v)", request.Type, err)
+				logger.Debug(log.Wrap(err, EReplyFailed, "failed to send reply to global request type %s", request.Type))
 			}
 		}
 	}
 }
 
-func (s *server) handleChannels(connectionID string, channels <-chan ssh.NewChannel, connection SSHConnectionHandler) {
+func (s *server) handleChannels(
+	connectionID string,
+	channels <-chan ssh.NewChannel,
+	connection SSHConnectionHandler,
+	logger log.Logger,
+) {
 	for {
 		newChannel, ok := <-channels
 		if !ok {
@@ -338,13 +448,14 @@ func (s *server) handleChannels(connectionID string, channels <-chan ssh.NewChan
 		channelID := s.nextChannelID
 		s.nextChannelID++
 		if newChannel.ChannelType() != "session" {
+			logger.Debug(log.NewMessage(EUnsupportedChannelType, "Unsupported channel type requested").Label("type", newChannel.ChannelType()))
 			connection.OnUnsupportedChannel(channelID, newChannel.ChannelType(), newChannel.ExtraData())
 			if err := newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type"); err != nil {
-				s.logger.Debugf("failed to send channel rejection for channel type %s", newChannel.ChannelType())
+				logger.Debug("failed to send channel rejection for channel type %s", newChannel.ChannelType())
 			}
 			continue
 		}
-		go s.handleSessionChannel(connectionID, channelID, newChannel, connection)
+		go s.handleSessionChannel(connectionID, channelID, newChannel, connection, logger)
 	}
 }
 
@@ -444,6 +555,11 @@ func (c *channelWrapper) ExitStatus(exitCode uint32) {
 	if c.channel == nil {
 		panic(fmt.Errorf("BUG: exit status sent before channel is open"))
 	}
+	c.logger.Debug(log.NewMessage(
+		MExit,
+		"Program exited with status %d",
+		exitCode,
+	).Label("exitCode", exitCode))
 	if c.exitSent || c.closed {
 		return
 	}
@@ -455,7 +571,11 @@ func (c *channelWrapper) ExitStatus(exitCode uint32) {
 			ExitStatus: exitCode,
 		})); err != nil {
 		if !errors.Is(err, io.EOF) {
-			c.logger.Debugf("failed to send exit status to client (%v)", err)
+			c.logger.Debug(log.Wrap(
+				err,
+				EExitCodeFailed,
+				"Failed to send exit status to client",
+			))
 		}
 	}
 }
@@ -466,6 +586,11 @@ func (c *channelWrapper) ExitSignal(signal string, coreDumped bool, errorMessage
 	if c.channel == nil {
 		panic(fmt.Errorf("BUG: exit signal sent before channel is open"))
 	}
+	c.logger.Debug(log.NewMessage(
+		MExitSignal,
+		"Program exited with signal %s",
+		signal,
+	).Label("signal", signal).Label("coreDumped", coreDumped))
 	if c.exitSignalSent || c.closed {
 		return
 	}
@@ -480,7 +605,11 @@ func (c *channelWrapper) ExitSignal(signal string, coreDumped bool, errorMessage
 			LanguageTag:  languageTag,
 		})); err != nil {
 		if !errors.Is(err, io.EOF) {
-			c.logger.Debugf("failed to send exit status to client (%v)", err)
+			c.logger.Debug(log.Wrap(
+				err,
+				EExitCodeFailed,
+				"Failed to send exit status to client",
+			))
 		}
 	}
 }
@@ -511,15 +640,23 @@ func (c *channelWrapper) onClose() {
 	c.closed = true
 }
 
-func (s *server) handleSessionChannel(connectionID string, channelID uint64, newChannel ssh.NewChannel, connection SSHConnectionHandler) {
+func (s *server) handleSessionChannel(
+	connectionID string,
+	channelID uint64,
+	newChannel ssh.NewChannel,
+	connection SSHConnectionHandler,
+	logger log.Logger,
+) {
 	channelCallbacks := &channelWrapper{
 		logger: s.logger,
 		lock:   &sync.Mutex{},
 	}
 	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData(), channelCallbacks)
 	if rejection != nil {
+		logger.Debug(log.Wrap(rejection, MNewChannelRejected, "New SSH channel rejected").Label("type", newChannel.ChannelType()))
+
 		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
-			s.logger.Debugf("failed to send session channel rejection", err)
+			logger.Debug(log.Wrap(rejection, EReplyFailed, "Failed to send reply to channel request"))
 		}
 		return
 	}
@@ -527,14 +664,17 @@ func (s *server) handleSessionChannel(connectionID string, channelID uint64, new
 	s.shutdownHandlers.Register(shutdownHandlerID, handlerChannel)
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
-		s.logger.Debugf("failed to accept session channel (%v)", err)
+		logger.Debug(log.Wrap(err, EReplyFailed, "failed to accept session channel"))
+		s.shutdownHandlers.Unregister(shutdownHandlerID)
 		return
 	}
+	logger.Debug(log.NewMessage(MNewChannel, "New SSH channel").Label("type", newChannel.ChannelType()))
 	channelCallbacks.channel = channel
 	nextRequestID := uint64(0)
 	for {
 		request, ok := <-requests
 		if !ok {
+			s.shutdownHandlers.Unregister(shutdownHandlerID)
 			channelCallbacks.onClose()
 			handlerChannel.OnClose()
 			break
@@ -608,7 +748,11 @@ func (s *server) handleChannelRequest(
 				success,
 				[]byte(message),
 			); err != nil {
-				s.logger.Debugf("failed to send reply (%v)", err)
+				s.logger.Debug(log.Wrap(
+					err,
+					EReplyFailed,
+					"Failed to send reply to client",
+				))
 			}
 		}
 	}
@@ -619,20 +763,40 @@ func (s *server) handleChannelRequest(
 		return
 	}
 	if err != nil {
-		s.logger.Debugf("failed to unmarshal %s request payload %v (%v)", request.Type, request.Payload, err)
+		s.logger.Debug(log.Wrap(
+			err,
+			EDecodeFailed,
+			"failed to unmarshal %s request payload",
+			request.Type,
+		))
 		sessionChannel.OnFailedDecodeChannelRequest(requestID, request.Type, request.Payload, err)
 		reply(false, "failed to unmarshal payload", nil)
 		return
 	}
+	s.logger.Debug(log.NewMessage(
+		MChannelRequest,
+		"%s channel request from client",
+		request.Type,
+	).Label("requestType", request.Type))
 	if err := s.handleDecodedChannelRequest(
 		requestID,
 		requestType(request.Type),
 		payload,
 		sessionChannel,
 	); err != nil {
+		s.logger.Debug(log.NewMessage(
+			MChannelRequestFailed,
+			"%s channel request from client failed",
+			request.Type,
+		).Label("requestType", request.Type))
 		reply(false, err.Error(), err)
 		return
 	}
+	s.logger.Debug(log.NewMessage(
+		MChannelRequestSuccessful,
+		"%s channel request from client successful",
+		request.Type,
+	).Label("requestType", request.Type))
 	reply(true, "", nil)
 }
 

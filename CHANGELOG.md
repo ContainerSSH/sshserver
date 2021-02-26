@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.18: Moving to new logger
+
+This releaser cleans up logging and moves to the new logger 0.9.11.
+
+## 0.9.17: Fixing shutdown double-call
+
+This release fixes a bug where the OnShutdown function on the handler was called twice.
+
 ## 0.9.16: Keyboard-interactive authentication
 
 This release adds support for keyboard-interactive authentication.

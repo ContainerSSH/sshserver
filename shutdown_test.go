@@ -13,7 +13,7 @@ import (
 func TestProperShutdown(t *testing.T) {
 	user := sshserver.NewTestUser("foo")
 	user.RandomPassword()
-	logger := log.GetTestLogger(t)
+	logger := log.NewTestLogger(t)
 	testServer := sshserver.NewTestServer(
 		sshserver.NewTestAuthenticationHandler(
 			sshserver.NewTestHandler(),
