@@ -1,5 +1,7 @@
 github.com/containerssh/log v0.9.9 h1:JNgeUs5PxCy1qT80RgNSjGBHsS6ukwsKRsZphVJ4yLY=
 github.com/containerssh/log v0.9.9/go.mod h1:NBMzkhOLZ4z45ShSBKQ/Ij6Hqqg15DgOKy6HlSITx0s=
+github.com/containerssh/log v0.9.11 h1:CLpl9mhxBg4giLZjcZB+FjddYypm2f2x1bCY3iissdA=
+github.com/containerssh/log v0.9.11/go.mod h1:uVuUPoZsJYi2KoV9+lgPeB/gWuXeUTD3AoVxc4y+tKY=
 github.com/containerssh/service v0.9.0 h1:JUHqiK12tclq7EWQYGRTfgKKw6fhHs0gxlKWTvVwFlQ=
 github.com/containerssh/service v0.9.0/go.mod h1:otAKYF1MWy2eB0K7Sk7YQIECQMTHR3yikbyS1UstGpY=
 github.com/containerssh/structutils v0.9.0 h1:pz4xl5ZrPnpdSx7B/ru8Fj3oU3vOtx1jprIuSkm5s7o=
@@ -29,6 +31,8 @@ github.com/qdm12/reprint v0.0.0-20200326205758-722754a53494/go.mod h1:yipyliwI08
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/testify v1.6.1 h1:hDPOHmpOpP40lSULcqw7IrRb/u7w6RpDC9399XyoNd0=
 github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
+github.com/stretchr/testify v1.7.0 h1:nwc3DEeHmmLAfoZucVR881uASk0Mfjw8xYJ99tb5CcY=
+github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=
 golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad h1:DN0cp81fZ3njFcrLCytUHRSUkqBjfTo4Tx9RJTWs0EY=
 golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad/go.mod h1:jdWPYTVW3xRLrWPugEBEK3UY2ZEsg3UU495nc5E+M+I=
