@@ -296,11 +296,22 @@ func (s *server) createAuthenticators(
 	func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error),
 	func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error),
 ) {
-	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection, logger)
-	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection, logger)
+	passwordCallback := s.createPasswordCallback(handlerNetworkConnection, logger)
+	pubkeyCallback := s.createPubKeyCallback(handlerNetworkConnection, logger)
+	keyboardInteractiveCallback := s.createKeyboardInteractiveCallback(handlerNetworkConnection, logger)
+	return passwordCallback, pubkeyCallback, keyboardInteractiveCallback
+}
+
+func (s *server) createKeyboardInteractiveCallback(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 	keyboardInteractiveHandler := s.createKeyboardInteractiveHandler(handlerNetworkConnection, logger)
-	passwordCallback := func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		permissions, err := passwordHandler(conn, password)
+	keyboardInteractiveCallback := func(
+		conn ssh.ConnMetadata,
+		challenge ssh.KeyboardInteractiveChallenge,
+	) (*ssh.Permissions, error) {
+		permissions, err := keyboardInteractiveHandler(conn, challenge)
 		if err != nil {
 			return permissions, err
 		}
@@ -319,6 +330,14 @@ func (s *server) createAuthenticators(
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
 		return permissions, err
 	}
+	return keyboardInteractiveCallback
+}
+
+func (s *server) createPubKeyCallback(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection, logger)
 	pubkeyCallback := func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 		permissions, err := pubKeyHandler(conn, key)
 		if err != nil {
@@ -339,25 +358,35 @@ func (s *server) createAuthenticators(
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
 		return permissions, err
 	}
-	keyboardInteractiveCallback := func(
-		conn ssh.ConnMetadata,
-		challenge ssh.KeyboardInteractiveChallenge,
-	) (*ssh.Permissions, error) {
-		permissions, err := keyboardInteractiveHandler(conn, challenge)
+	return pubkeyCallback
+}
+
+func (s *server) createPasswordCallback(
+	handlerNetworkConnection *networkConnectionWrapper,
+	logger log.Logger,
+) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection, logger)
+	passwordCallback := func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
+		permissions, err := passwordHandler(conn, password)
 		if err != nil {
 			return permissions, err
 		}
 		// HACK: check HACKS.md "OnHandshakeSuccess handler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
-			err = log.WrapUser(err, EBackendRejected, "Authentication currently unavailable, please try again later.", "The backend has rejected the user after successful authentication.")
+			err = log.WrapUser(
+				err,
+				EBackendRejected,
+				"Authentication currently unavailable, please try again later.",
+				"The backend has rejected the user after successful authentication.",
+			)
 			s.logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
 		return permissions, err
 	}
-	return passwordCallback, pubkeyCallback, keyboardInteractiveCallback
+	return passwordCallback
 }
 
 // HACK: check HACKS.md "OnHandshakeSuccess handler"
