@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.19: Better logging of backend failures
+
+This release adds an error to OnHandshakeSuccessful hooks to better log cases where the backend rejects the connection after the authentication was successful.
+
 ## 0.9.18: Moving to new logger
 
 This releaser cleans up logging and moves to the new logger 0.9.11.

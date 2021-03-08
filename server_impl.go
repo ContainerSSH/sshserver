@@ -307,6 +307,13 @@ func (s *server) createAuthenticators(
 		// HACK: check HACKS.md "OnHandshakeSuccess handler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
+			err = log.WrapUser(
+				err,
+				EBackendRejected,
+				"Authentication currently unavailable, please try again later.",
+				"The backend has rejected the user after successful authentication.",
+			)
+			s.logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -320,6 +327,13 @@ func (s *server) createAuthenticators(
 		// HACK: check HACKS.md "OnHandshakeSuccess handler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
+			err = log.WrapUser(
+				err,
+				EBackendRejected,
+				"Authentication currently unavailable, please try again later.",
+				"The backend has rejected the user after successful authentication.",
+			)
+			s.logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -336,6 +350,8 @@ func (s *server) createAuthenticators(
 		// HACK: check HACKS.md "OnHandshakeSuccess handler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
+			err = log.WrapUser(err, EBackendRejected, "Authentication currently unavailable, please try again later.", "The backend has rejected the user after successful authentication.")
+			s.logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -447,6 +463,7 @@ func (s *server) handleChannels(
 		}
 		channelID := s.nextChannelID
 		s.nextChannelID++
+		logger = logger.WithLabel("channelId", channelID)
 		if newChannel.ChannelType() != "session" {
 			logger.Debug(log.NewMessage(EUnsupportedChannelType, "Unsupported channel type requested").Label("type", newChannel.ChannelType()))
 			connection.OnUnsupportedChannel(channelID, newChannel.ChannelType(), newChannel.ExtraData())
@@ -648,7 +665,7 @@ func (s *server) handleSessionChannel(
 	logger log.Logger,
 ) {
 	channelCallbacks := &channelWrapper{
-		logger: s.logger,
+		logger: logger,
 		lock:   &sync.Mutex{},
 	}
 	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData(), channelCallbacks)
