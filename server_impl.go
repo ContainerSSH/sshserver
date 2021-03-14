@@ -789,20 +789,7 @@ func (s *server) handleChannelRequest(
 	sessionChannel SessionChannelHandler,
 	logger log.Logger,
 ) {
-	reply := func(success bool, message string, reason error) {
-		if request.WantReply {
-			if err := request.Reply(
-				success,
-				[]byte(message),
-			); err != nil {
-				logger.Debug(log.Wrap(
-					err,
-					EReplyFailed,
-					"Failed to send reply to client",
-				))
-			}
-		}
-	}
+	reply := s.createReply(request, logger)
 	payload, err := s.unmarshalPayload(request)
 	if payload == nil {
 		sessionChannel.OnUnsupportedChannelRequest(requestID, request.Type, request.Payload)
@@ -810,41 +797,69 @@ func (s *server) handleChannelRequest(
 		return
 	}
 	if err != nil {
-		logger.Debug(log.Wrap(
-			err,
-			EDecodeFailed,
-			"failed to unmarshal %s request payload",
-			request.Type,
-		))
+		logger.Debug(
+			log.Wrap(
+				err,
+				EDecodeFailed,
+				"failed to unmarshal %s request payload",
+				request.Type,
+			),
+		)
 		sessionChannel.OnFailedDecodeChannelRequest(requestID, request.Type, request.Payload, err)
 		reply(false, "failed to unmarshal payload", nil)
 		return
 	}
-	logger.Debug(log.NewMessage(
-		MChannelRequest,
-		"%s channel request from client",
-		request.Type,
-	).Label("requestType", request.Type))
+	logger.Debug(
+		log.NewMessage(
+			MChannelRequest,
+			"%s channel request from client",
+			request.Type,
+		).Label("requestType", request.Type),
+	)
 	if err := s.handleDecodedChannelRequest(
 		requestID,
 		requestType(request.Type),
 		payload,
 		sessionChannel,
 	); err != nil {
-		logger.Debug(log.NewMessage(
-			MChannelRequestFailed,
-			"%s channel request from client failed",
-			request.Type,
-		).Label("requestType", request.Type))
+		logger.Debug(
+			log.NewMessage(
+				MChannelRequestFailed,
+				"%s channel request from client failed",
+				request.Type,
+			).Label("requestType", request.Type),
+		)
 		reply(false, err.Error(), err)
 		return
 	}
-	logger.Debug(log.NewMessage(
-		MChannelRequestSuccessful,
-		"%s channel request from client successful",
-		request.Type,
-	).Label("requestType", request.Type))
+	logger.Debug(
+		log.NewMessage(
+			MChannelRequestSuccessful,
+			"%s channel request from client successful",
+			request.Type,
+		).Label("requestType", request.Type),
+	)
 	reply(true, "", nil)
+}
+
+func (s *server) createReply(request *ssh.Request, logger log.Logger) func(success bool, message string, reason error) {
+	reply := func(success bool, message string, reason error) {
+		if request.WantReply {
+			if err := request.Reply(
+				success,
+				[]byte(message),
+			); err != nil {
+				logger.Debug(
+					log.Wrap(
+						err,
+						EReplyFailed,
+						"Failed to send reply to client",
+					),
+				)
+			}
+		}
+	}
+	return reply
 }
 
 func (s *server) handleDecodedChannelRequest(
