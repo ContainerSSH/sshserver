@@ -324,7 +324,7 @@ func (s *server) createKeyboardInteractiveCallback(
 				"Authentication currently unavailable, please try again later.",
 				"The backend has rejected the user after successful authentication.",
 			)
-			s.logger.Error(err)
+			logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -352,7 +352,7 @@ func (s *server) createPubKeyCallback(
 				"Authentication currently unavailable, please try again later.",
 				"The backend has rejected the user after successful authentication.",
 			)
-			s.logger.Error(err)
+			logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -380,7 +380,7 @@ func (s *server) createPasswordCallback(
 				"Authentication currently unavailable, please try again later.",
 				"The backend has rejected the user after successful authentication.",
 			)
-			s.logger.Error(err)
+			logger.Error(err)
 			return permissions, err
 		}
 		handlerNetworkConnection.sshConnectionHandler = sshConnectionHandler
@@ -402,17 +402,17 @@ func (n *networkConnectionWrapper) OnShutdown(shutdownContext context.Context) {
 func (s *server) handleConnection(conn net.Conn) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
 	connectionID := GenerateConnectionID()
+	logger := s.logger.
+		WithLabel("remoteAddr", addr.IP.String()).
+		WithLabel("connectionId", connectionID)
 	handlerNetworkConnection, err := s.handler.OnNetworkConnection(*addr, connectionID)
 	if err != nil {
-		s.logger.Info(err)
+		logger.Info(err)
 		_ = conn.Close()
 		return
 	}
 	shutdownHandlerID := fmt.Sprintf("network-%s", connectionID)
 	s.shutdownHandlers.Register(shutdownHandlerID, handlerNetworkConnection)
-	logger := s.logger.
-		WithLabel("remoteAddr", addr.IP.String()).
-		WithLabel("connectionId", connectionID)
 
 	logger.Debug(log.NewMessage(
 		MConnected, "Client connected",
@@ -727,7 +727,7 @@ func (s *server) handleSessionChannel(
 		}
 		requestID := nextRequestID
 		nextRequestID++
-		s.handleChannelRequest(requestID, request, handlerChannel)
+		s.handleChannelRequest(requestID, request, handlerChannel, logger)
 	}
 }
 
@@ -787,6 +787,7 @@ func (s *server) handleChannelRequest(
 	requestID uint64,
 	request *ssh.Request,
 	sessionChannel SessionChannelHandler,
+	logger log.Logger,
 ) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
@@ -794,7 +795,7 @@ func (s *server) handleChannelRequest(
 				success,
 				[]byte(message),
 			); err != nil {
-				s.logger.Debug(log.Wrap(
+				logger.Debug(log.Wrap(
 					err,
 					EReplyFailed,
 					"Failed to send reply to client",
@@ -809,7 +810,7 @@ func (s *server) handleChannelRequest(
 		return
 	}
 	if err != nil {
-		s.logger.Debug(log.Wrap(
+		logger.Debug(log.Wrap(
 			err,
 			EDecodeFailed,
 			"failed to unmarshal %s request payload",
@@ -819,7 +820,7 @@ func (s *server) handleChannelRequest(
 		reply(false, "failed to unmarshal payload", nil)
 		return
 	}
-	s.logger.Debug(log.NewMessage(
+	logger.Debug(log.NewMessage(
 		MChannelRequest,
 		"%s channel request from client",
 		request.Type,
@@ -830,7 +831,7 @@ func (s *server) handleChannelRequest(
 		payload,
 		sessionChannel,
 	); err != nil {
-		s.logger.Debug(log.NewMessage(
+		logger.Debug(log.NewMessage(
 			MChannelRequestFailed,
 			"%s channel request from client failed",
 			request.Type,
@@ -838,7 +839,7 @@ func (s *server) handleChannelRequest(
 		reply(false, err.Error(), err)
 		return
 	}
-	s.logger.Debug(log.NewMessage(
+	logger.Debug(log.NewMessage(
 		MChannelRequestSuccessful,
 		"%s channel request from client successful",
 		request.Type,
