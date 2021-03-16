@@ -47,7 +47,7 @@ func DefaultConfig() Config {
 // GenerateHostKey generates a random host key and adds it to Config
 func (cfg *Config) GenerateHostKey() error {
 	reader := rand.Reader
-	bitSize := 2048
+	bitSize := 4096
 	key, err := rsa.GenerateKey(reader, bitSize)
 	if err != nil {
 		return err

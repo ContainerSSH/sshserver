@@ -79,7 +79,7 @@ func (u *TestUser) RandomPassword() {
 // GenerateKey generates a public and private key pair that can be used to authenticate with this user.
 func (u *TestUser) GenerateKey() (privateKeyPEM string, publicKeyAuthorizedKeys string) {
 	random := rand.New(rand.NewSource(time.Now().UnixNano()))
-	privateKey, err := rsa.GenerateKey(random, 2048)
+	privateKey, err := rsa.GenerateKey(random, 4096)
 	if err != nil {
 		panic(err)
 	}

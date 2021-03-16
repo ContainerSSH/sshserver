@@ -192,7 +192,7 @@ func TestSessionError(t *testing.T) {
 func TestPubKey(t *testing.T) {
 	rsaKey, err := rsa.GenerateKey(
 		rand.Reader,
-		2048,
+		4096,
 	)
 	assert.Nil(t, err, "failed to generate RSA key (%v)", err)
 	signer, err := ssh.NewSignerFromKey(rsaKey)
