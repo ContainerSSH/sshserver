@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.20: Adding connectionId
+
+This release adds the connectionId field to the log messages that were missing it.
+
 ## 0.9.19: Better logging of backend failures
 
 This release adds an error to OnHandshakeSuccessful hooks to better log cases where the backend rejects the connection after the authentication was successful.
