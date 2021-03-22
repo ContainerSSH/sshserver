@@ -12,7 +12,7 @@ require (
 	github.com/mattn/go-shellwords v1.0.11 // indirect
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
-	golang.org/x/sys v0.0.0-20210113181707-4bcb84eeeb78 // indirect
+	golang.org/x/sys v0.0.0-20210320140829-1e4c9ba3b0c4 // indirect
 )
 
 // Fixes CVE-2020-9283
