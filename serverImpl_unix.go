@@ -5,6 +5,8 @@ package sshserver
 
 import (
 	"syscall"
+
+	"github.com/containerssh/log"
 )
 
 func (s *serverImpl) socketControl(_, _ string, conn syscall.RawConn) error {
