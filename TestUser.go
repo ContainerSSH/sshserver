@@ -14,14 +14,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// NewTestUser creates a user that can be used with NewTestHandler and NewTestClient.
-func NewTestUser(username string) *TestUser {
-	return &TestUser{
-		username:            username,
-		keyboardInteractive: map[string]string{},
-	}
-}
-
 // TestUser is a container for a username, a password and public keys
 type TestUser struct {
 	username            string

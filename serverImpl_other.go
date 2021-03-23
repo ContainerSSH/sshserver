@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-func (s *server) socketControl(network, address string, conn syscall.RawConn) error {
+func (s *serverImpl) socketControl(network, address string, conn syscall.RawConn) error {
 	return conn.Control(func(descriptor uintptr) {
 	})
 }

@@ -22,7 +22,7 @@ func NewTestClient(
 		panic(err)
 	}
 
-	return &testClient{
+	return &testClientImpl{
 		server:  server,
 		hostKey: private.PublicKey().Marshal(),
 		user:    user,

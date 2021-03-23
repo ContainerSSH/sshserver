@@ -486,7 +486,7 @@ func (f *fullHandler) OnNetworkConnection(_ net.TCPAddr, _ string) (sshserver.Ne
 
 //endregion
 
-//region Network connection handler
+//region Network connection conformanceTestHandler
 
 type fullNetworkConnectionHandler struct {
 	sshserver.AbstractNetworkConnectionHandler
@@ -519,7 +519,7 @@ func (f *fullNetworkConnectionHandler) OnHandshakeSuccess(_ string) (connection 
 
 //endregion
 
-//region SSH connection handler
+//region SSH connection conformanceTestHandler
 
 type fullSSHConnectionHandler struct {
 	sshserver.AbstractSSHConnectionHandler
@@ -541,7 +541,7 @@ func (f *fullSSHConnectionHandler) OnSessionChannel(
 
 //endregion
 
-//region Session channel handler
+//region Session channel conformanceTestHandler
 
 type fullSessionChannelHandler struct {
 	sshserver.AbstractSessionChannelHandler

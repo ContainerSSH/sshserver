@@ -15,7 +15,7 @@ func New(cfg Config, handler Handler, logger log.Logger) (Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &server{
+	return &serverImpl{
 		cfg:          cfg,
 		handler:      handler,
 		logger:       logger,

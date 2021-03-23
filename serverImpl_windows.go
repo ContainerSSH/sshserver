@@ -4,9 +4,11 @@ package sshserver
 
 import (
 	"syscall"
+
+	"github.com/containerssh/log"
 )
 
-func (s *server) socketControl(_, _ string, conn syscall.RawConn) error {
+func (s *serverImpl) socketControl(_, _ string, conn syscall.RawConn) error {
 	return conn.Control(func(descriptor uintptr) {
 		err := syscall.SetsockoptInt(
 			syscall.Handle(descriptor),
@@ -15,7 +17,7 @@ func (s *server) socketControl(_, _ string, conn syscall.RawConn) error {
 			1,
 		)
 		if err != nil {
-			s.logger.Warningf("failed to set SO_REUSEADDR. Server may fail on restart")
+			s.logger.Warning(log.NewMessage(ESOReuseFailed, "failed to set SO_REUSEADDR. Server may fail on restart"))
 		}
 	})
 }

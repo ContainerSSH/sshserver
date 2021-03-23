@@ -74,3 +74,6 @@ const MChannelRequestSuccessful = "SSH_CHANNEL_REQUEST_SUCCESSFUL"
 
 // The backend has rejected the connecting user after successful authentication.
 const EBackendRejected = "SSH_BACKEND_REJECTED_HANDSHAKE"
+
+// ContainerSSH failed to set the socket to reuse. This may cause ContainerSSH to fail on a restart.
+const ESOReuseFailed = "SSH_SOCKET_REUSE_FAILED"

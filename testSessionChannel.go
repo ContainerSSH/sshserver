@@ -6,83 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 
 	"github.com/containerssh/unixutils"
 )
-
-// NewTestHandler creates a handler that can be used for testing purposes. It does not authenticate, that can be done
-// using the NewTestAuthenticationHandler
-func NewTestHandler() Handler {
-	return &testHandler{}
-}
-
-// testHandler is a handler implementation that fakes a "real" backend.
-type testHandler struct {
-	AbstractHandler
-
-	shutdown bool
-}
-
-func (t *testHandler) OnShutdown(_ context.Context) {
-	t.shutdown = true
-}
-
-func (t *testHandler) OnNetworkConnection(client net.TCPAddr, connectionID string) (NetworkConnectionHandler, error) {
-	return &testNetworkHandler{
-		client:       client,
-		connectionID: connectionID,
-		rootHandler:  t,
-	}, nil
-}
-
-type testNetworkHandler struct {
-	AbstractNetworkConnectionHandler
-
-	rootHandler  *testHandler
-	client       net.TCPAddr
-	connectionID string
-	shutdown     bool
-}
-
-func (t *testNetworkHandler) OnHandshakeSuccess(username string) (
-	connection SSHConnectionHandler,
-	failureReason error,
-) {
-	return &testSSHHandler{
-		rootHandler:    t.rootHandler,
-		networkHandler: t,
-		username:       username,
-	}, nil
-}
-
-func (t *testNetworkHandler) OnShutdown(_ context.Context) {
-	t.shutdown = true
-}
-
-type testSSHHandler struct {
-	AbstractSSHConnectionHandler
-
-	rootHandler    *testHandler
-	networkHandler *testNetworkHandler
-	username       string
-	shutdown       bool
-}
-
-func (t *testSSHHandler) OnSessionChannel(_ uint64, _ []byte, session SessionChannel) (
-	channel SessionChannelHandler,
-	failureReason ChannelRejection,
-) {
-	return &testSessionChannel{
-		session: session,
-		env:     map[string]string{},
-	}, nil
-}
-
-func (t *testSSHHandler) OnShutdown(_ context.Context) {
-	t.shutdown = true
-}
 
 type testSessionChannel struct {
 	AbstractSessionChannelHandler

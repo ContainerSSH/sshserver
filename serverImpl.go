@@ -2,9 +2,7 @@ package sshserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"sync"
@@ -14,7 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type server struct {
+type serverImpl struct {
 	cfg                 Config
 	logger              log.Logger
 	handler             Handler
@@ -29,11 +27,11 @@ type server struct {
 	shuttingDown        bool
 }
 
-func (s *server) String() string {
+func (s *serverImpl) String() string {
 	return "SSH server"
 }
 
-func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
+func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	s.lock.Lock()
 	alreadyRunning := false
 	if s.listenSocket != nil {
@@ -94,7 +92,7 @@ func (s *server) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	return nil
 }
 
-func (s *server) disconnectClients(lifecycle service.Lifecycle, allClientsExited chan struct{}) {
+func (s *serverImpl) disconnectClients(lifecycle service.Lifecycle, allClientsExited chan struct{}) {
 	select {
 	case <-allClientsExited:
 		return
@@ -109,7 +107,7 @@ func (s *server) disconnectClients(lifecycle service.Lifecycle, allClientsExited
 	s.lock.Unlock()
 }
 
-func (s *server) createPasswordAuthenticator(
+func (s *serverImpl) createPasswordAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
@@ -130,7 +128,7 @@ func (s *server) createPasswordAuthenticator(
 	}
 }
 
-func (s *server) wrapAndLogAuthUnavailable(
+func (s *serverImpl) wrapAndLogAuthUnavailable(
 	logger log.Logger,
 	conn ssh.ConnMetadata,
 	authMethod string,
@@ -151,7 +149,7 @@ func (s *server) wrapAndLogAuthUnavailable(
 	return err
 }
 
-func (s *server) wrapAndLogAuthFailure(logger log.Logger, conn ssh.ConnMetadata, authMethod string, err error) error {
+func (s *serverImpl) wrapAndLogAuthFailure(logger log.Logger, conn ssh.ConnMetadata, authMethod string, err error) error {
 	if err == nil {
 		err = log.UserMessage(
 			EAuthFailed,
@@ -180,7 +178,7 @@ func (s *server) wrapAndLogAuthFailure(logger log.Logger, conn ssh.ConnMetadata,
 	return err
 }
 
-func (s *server) logAuthSuccessful(logger log.Logger, conn ssh.ConnMetadata, authMethod string) {
+func (s *serverImpl) logAuthSuccessful(logger log.Logger, conn ssh.ConnMetadata, authMethod string) {
 	err := log.UserMessage(
 		EAuthSuccessful,
 		"Authentication successful.",
@@ -191,7 +189,7 @@ func (s *server) logAuthSuccessful(logger log.Logger, conn ssh.ConnMetadata, aut
 	logger.Info(err)
 }
 
-func (s *server) createPubKeyAuthenticator(
+func (s *serverImpl) createPubKeyAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
@@ -214,7 +212,7 @@ func (s *server) createPubKeyAuthenticator(
 	}
 }
 
-func (s *server) createKeyboardInteractiveHandler(
+func (s *serverImpl) createKeyboardInteractiveHandler(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
@@ -260,7 +258,7 @@ func (s *server) createKeyboardInteractiveHandler(
 	}
 }
 
-func (s *server) createConfiguration(
+func (s *serverImpl) createConfiguration(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) *ssh.ServerConfig {
@@ -270,16 +268,16 @@ func (s *server) createConfiguration(
 	)
 	serverConfig := &ssh.ServerConfig{
 		Config: ssh.Config{
-			KeyExchanges: s.cfg.getKex(),
-			Ciphers:      s.cfg.getCiphers(),
-			MACs:         s.cfg.getMACs(),
+			KeyExchanges: s.cfg.KexAlgorithms.StringList(),
+			Ciphers:      s.cfg.Ciphers.StringList(),
+			MACs:         s.cfg.MACs.StringList(),
 		},
 		NoClientAuth:                false,
 		MaxAuthTries:                6,
 		PasswordCallback:            passwordCallback,
 		PublicKeyCallback:           pubkeyCallback,
 		KeyboardInteractiveCallback: keyboardInteractiveCallback,
-		ServerVersion:               s.cfg.ServerVersion,
+		ServerVersion:               s.cfg.ServerVersion.String(),
 		BannerCallback:              func(conn ssh.ConnMetadata) string { return s.cfg.Banner },
 	}
 	for _, key := range s.hostKeys {
@@ -288,7 +286,7 @@ func (s *server) createConfiguration(
 	return serverConfig
 }
 
-func (s *server) createAuthenticators(
+func (s *serverImpl) createAuthenticators(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) (
@@ -302,7 +300,7 @@ func (s *server) createAuthenticators(
 	return passwordCallback, pubkeyCallback, keyboardInteractiveCallback
 }
 
-func (s *server) createKeyboardInteractiveCallback(
+func (s *serverImpl) createKeyboardInteractiveCallback(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
@@ -315,7 +313,7 @@ func (s *server) createKeyboardInteractiveCallback(
 		if err != nil {
 			return permissions, err
 		}
-		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
 			err = log.WrapUser(
@@ -333,7 +331,7 @@ func (s *server) createKeyboardInteractiveCallback(
 	return keyboardInteractiveCallback
 }
 
-func (s *server) createPubKeyCallback(
+func (s *serverImpl) createPubKeyCallback(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -343,7 +341,7 @@ func (s *server) createPubKeyCallback(
 		if err != nil {
 			return permissions, err
 		}
-		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
 			err = log.WrapUser(
@@ -361,7 +359,7 @@ func (s *server) createPubKeyCallback(
 	return pubkeyCallback
 }
 
-func (s *server) createPasswordCallback(
+func (s *serverImpl) createPasswordCallback(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
 ) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
@@ -371,7 +369,7 @@ func (s *server) createPasswordCallback(
 		if err != nil {
 			return permissions, err
 		}
-		// HACK: check HACKS.md "OnHandshakeSuccess handler"
+		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
 		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
 		if err != nil {
 			err = log.WrapUser(
@@ -389,17 +387,7 @@ func (s *server) createPasswordCallback(
 	return passwordCallback
 }
 
-// HACK: check HACKS.md "OnHandshakeSuccess handler"
-type networkConnectionWrapper struct {
-	NetworkConnectionHandler
-	sshConnectionHandler SSHConnectionHandler
-}
-
-func (n *networkConnectionWrapper) OnShutdown(shutdownContext context.Context) {
-	n.sshConnectionHandler.OnShutdown(shutdownContext)
-}
-
-func (s *server) handleConnection(conn net.Conn) {
+func (s *serverImpl) handleConnection(conn net.Conn) {
 	addr := conn.RemoteAddr().(*net.TCPAddr)
 	connectionID := GenerateConnectionID()
 	logger := s.logger.
@@ -418,7 +406,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		MConnected, "Client connected",
 	))
 
-	// HACK: check HACKS.md "OnHandshakeSuccess handler"
+	// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
 	wrapper := networkConnectionWrapper{
 		NetworkConnectionHandler: handlerNetworkConnection,
 	}
@@ -449,7 +437,7 @@ func (s *server) handleConnection(conn net.Conn) {
 		handlerNetworkConnection.OnDisconnect()
 		s.wg.Done()
 	}()
-	// HACK: check HACKS.md "OnHandshakeSuccess handler"
+	// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
 	handlerSSHConnection := wrapper.sshConnectionHandler
 	s.shutdownHandlers.Register(sshShutdownHandlerID, handlerSSHConnection)
 
@@ -457,7 +445,7 @@ func (s *server) handleConnection(conn net.Conn) {
 	go s.handleGlobalRequests(globalRequests, handlerSSHConnection, logger)
 }
 
-func (s *server) handleGlobalRequests(
+func (s *serverImpl) handleGlobalRequests(
 	requests <-chan *ssh.Request,
 	connection SSHConnectionHandler,
 	logger log.Logger,
@@ -479,7 +467,7 @@ func (s *server) handleGlobalRequests(
 	}
 }
 
-func (s *server) handleChannels(
+func (s *serverImpl) handleChannels(
 	connectionID string,
 	channels <-chan ssh.NewChannel,
 	connection SSHConnectionHandler,
@@ -505,188 +493,7 @@ func (s *server) handleChannels(
 	}
 }
 
-type envRequestPayload struct {
-	Name  string
-	Value string
-}
-
-type execRequestPayload struct {
-	Exec string
-}
-
-type ptyRequestPayload struct {
-	Term     string
-	Columns  uint32
-	Rows     uint32
-	Width    uint32
-	Height   uint32
-	ModeList []byte
-}
-
-type shellRequestPayload struct {
-}
-
-type signalRequestPayload struct {
-	Signal string
-}
-
-type subsystemRequestPayload struct {
-	Subsystem string
-}
-
-type windowRequestPayload struct {
-	Columns uint32
-	Rows    uint32
-	Width   uint32
-	Height  uint32
-}
-
-type exitStatusPayload struct {
-	ExitStatus uint32
-}
-
-type exitSignalPayload struct {
-	Signal       string
-	CoreDumped   bool
-	ErrorMessage string
-	LanguageTag  string
-}
-
-type requestType string
-
-const (
-	requestTypeEnv       requestType = "env"
-	requestTypePty       requestType = "pty-req"
-	requestTypeShell     requestType = "shell"
-	requestTypeExec      requestType = "exec"
-	requestTypeSubsystem requestType = "subsystem"
-	requestTypeWindow    requestType = "window-change"
-	requestTypeSignal    requestType = "signal"
-)
-
-type channelWrapper struct {
-	channel        ssh.Channel
-	logger         log.Logger
-	lock           *sync.Mutex
-	exitSent       bool
-	exitSignalSent bool
-	closedWrite    bool
-	closed         bool
-}
-
-func (c *channelWrapper) Stdin() io.Reader {
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: stdin requested before channel is open"))
-	}
-	return c.channel
-}
-
-func (c *channelWrapper) Stdout() io.Writer {
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: stdout requested before channel is open"))
-	}
-	return c.channel
-}
-
-func (c *channelWrapper) Stderr() io.Writer {
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: stderr requested before channel is open"))
-	}
-	return c.channel.Stderr()
-}
-
-func (c *channelWrapper) ExitStatus(exitCode uint32) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: exit status sent before channel is open"))
-	}
-	c.logger.Debug(log.NewMessage(
-		MExit,
-		"Program exited with status %d",
-		exitCode,
-	).Label("exitCode", exitCode))
-	if c.exitSent || c.closed {
-		return
-	}
-	c.exitSent = true
-	if _, err := c.channel.SendRequest(
-		"exit-status",
-		false,
-		ssh.Marshal(exitStatusPayload{
-			ExitStatus: exitCode,
-		})); err != nil {
-		if !errors.Is(err, io.EOF) {
-			c.logger.Debug(log.Wrap(
-				err,
-				EExitCodeFailed,
-				"Failed to send exit status to client",
-			))
-		}
-	}
-}
-
-func (c *channelWrapper) ExitSignal(signal string, coreDumped bool, errorMessage string, languageTag string) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: exit signal sent before channel is open"))
-	}
-	c.logger.Debug(log.NewMessage(
-		MExitSignal,
-		"Program exited with signal %s",
-		signal,
-	).Label("signal", signal).Label("coreDumped", coreDumped))
-	if c.exitSignalSent || c.closed {
-		return
-	}
-	c.exitSignalSent = true
-	if _, err := c.channel.SendRequest(
-		"exit-signal",
-		false,
-		ssh.Marshal(exitSignalPayload{
-			Signal:       signal,
-			CoreDumped:   coreDumped,
-			ErrorMessage: errorMessage,
-			LanguageTag:  languageTag,
-		})); err != nil {
-		if !errors.Is(err, io.EOF) {
-			c.logger.Debug(log.Wrap(
-				err,
-				EExitCodeFailed,
-				"Failed to send exit status to client",
-			))
-		}
-	}
-}
-
-func (c *channelWrapper) CloseWrite() error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: channel closed for writing before channel is open"))
-	}
-	if c.closed || c.closedWrite {
-		return nil
-	}
-	return c.channel.CloseWrite()
-}
-
-func (c *channelWrapper) Close() error {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	if c.channel == nil {
-		panic(fmt.Errorf("BUG: channel closed before channel is open"))
-	}
-	c.closed = true
-	return c.channel.Close()
-}
-
-func (c *channelWrapper) onClose() {
-	c.closed = true
-}
-
-func (s *server) handleSessionChannel(
+func (s *serverImpl) handleSessionChannel(
 	connectionID string,
 	channelID uint64,
 	newChannel ssh.NewChannel,
@@ -731,38 +538,38 @@ func (s *server) handleSessionChannel(
 	}
 }
 
-func (s *server) unmarshalEnv(request *ssh.Request) (payload envRequestPayload, err error) {
+func (s *serverImpl) unmarshalEnv(request *ssh.Request) (payload envRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalPty(request *ssh.Request) (payload ptyRequestPayload, err error) {
+func (s *serverImpl) unmarshalPty(request *ssh.Request) (payload ptyRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalShell(request *ssh.Request) (payload shellRequestPayload, err error) {
+func (s *serverImpl) unmarshalShell(request *ssh.Request) (payload shellRequestPayload, err error) {
 	if len(request.Payload) != 0 {
 		err = ssh.Unmarshal(request.Payload, &payload)
 	}
 	return payload, err
 }
 
-func (s *server) unmarshalExec(request *ssh.Request) (payload execRequestPayload, err error) {
+func (s *serverImpl) unmarshalExec(request *ssh.Request) (payload execRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalSubsystem(request *ssh.Request) (payload subsystemRequestPayload, err error) {
+func (s *serverImpl) unmarshalSubsystem(request *ssh.Request) (payload subsystemRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalWindow(request *ssh.Request) (payload windowRequestPayload, err error) {
+func (s *serverImpl) unmarshalWindow(request *ssh.Request) (payload windowRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalSignal(request *ssh.Request) (payload signalRequestPayload, err error) {
+func (s *serverImpl) unmarshalSignal(request *ssh.Request) (payload signalRequestPayload, err error) {
 	return payload, ssh.Unmarshal(request.Payload, &payload)
 }
 
-func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, err error) {
+func (s *serverImpl) unmarshalPayload(request *ssh.Request) (payload interface{}, err error) {
 	switch requestType(request.Type) {
 	case requestTypeEnv:
 		return s.unmarshalEnv(request)
@@ -783,7 +590,7 @@ func (s *server) unmarshalPayload(request *ssh.Request) (payload interface{}, er
 	}
 }
 
-func (s *server) handleChannelRequest(
+func (s *serverImpl) handleChannelRequest(
 	requestID uint64,
 	request *ssh.Request,
 	sessionChannel SessionChannelHandler,
@@ -842,7 +649,7 @@ func (s *server) handleChannelRequest(
 	reply(true, "", nil)
 }
 
-func (s *server) createReply(request *ssh.Request, logger log.Logger) func(success bool, message string, reason error) {
+func (s *serverImpl) createReply(request *ssh.Request, logger log.Logger) func(success bool, message string, reason error) {
 	reply := func(success bool, message string, reason error) {
 		if request.WantReply {
 			if err := request.Reply(
@@ -862,7 +669,7 @@ func (s *server) createReply(request *ssh.Request, logger log.Logger) func(succe
 	return reply
 }
 
-func (s *server) handleDecodedChannelRequest(
+func (s *serverImpl) handleDecodedChannelRequest(
 	requestID uint64,
 	requestType requestType,
 	payload interface{},
@@ -887,7 +694,7 @@ func (s *server) handleDecodedChannelRequest(
 	return nil
 }
 
-func (s *server) onEnvRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+func (s *serverImpl) onEnvRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnEnvRequest(
 		requestID,
 		payload.(envRequestPayload).Name,
@@ -895,7 +702,7 @@ func (s *server) onEnvRequest(requestID uint64, sessionChannel SessionChannelHan
 	)
 }
 
-func (s *server) onPtyRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+func (s *serverImpl) onPtyRequest(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnPtyRequest(
 		requestID,
 		payload.(ptyRequestPayload).Term,
@@ -907,7 +714,7 @@ func (s *server) onPtyRequest(requestID uint64, sessionChannel SessionChannelHan
 	)
 }
 
-func (s *server) onShell(
+func (s *serverImpl) onShell(
 	requestID uint64,
 	sessionChannel SessionChannelHandler,
 ) error {
@@ -916,7 +723,7 @@ func (s *server) onShell(
 	)
 }
 
-func (s *server) onExec(
+func (s *serverImpl) onExec(
 	requestID uint64,
 	sessionChannel SessionChannelHandler,
 	payload interface{},
@@ -927,14 +734,14 @@ func (s *server) onExec(
 	)
 }
 
-func (s *server) onSignal(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+func (s *serverImpl) onSignal(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnSignal(
 		requestID,
 		payload.(signalRequestPayload).Signal,
 	)
 }
 
-func (s *server) onSubsystem(
+func (s *serverImpl) onSubsystem(
 	requestID uint64,
 	sessionChannel SessionChannelHandler,
 	payload interface{},
@@ -945,7 +752,7 @@ func (s *server) onSubsystem(
 	)
 }
 
-func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
+func (s *serverImpl) onChannel(requestID uint64, sessionChannel SessionChannelHandler, payload interface{}) error {
 	return sessionChannel.OnWindow(
 		requestID,
 		payload.(windowRequestPayload).Columns,
@@ -955,43 +762,11 @@ func (s *server) onChannel(requestID uint64, sessionChannel SessionChannelHandle
 	)
 }
 
-func (s *server) shutdownHandler(lifecycle service.Lifecycle, exited chan struct{}) {
+func (s *serverImpl) shutdownHandler(lifecycle service.Lifecycle, exited chan struct{}) {
 	s.handler.OnShutdown(lifecycle.ShutdownContext())
 	exited <- struct{}{}
 }
 
 type shutdownHandler interface {
 	OnShutdown(shutdownContext context.Context)
-}
-
-type shutdownRegistry struct {
-	lock      *sync.Mutex
-	callbacks map[string]shutdownHandler
-}
-
-func (s *shutdownRegistry) Register(key string, handler shutdownHandler) {
-	s.lock.Lock()
-	s.callbacks[key] = handler
-	s.lock.Unlock()
-}
-
-func (s *shutdownRegistry) Unregister(key string) {
-	s.lock.Lock()
-	delete(s.callbacks, key)
-	s.lock.Unlock()
-}
-
-func (s *shutdownRegistry) Shutdown(shutdownContext context.Context) {
-	wg := &sync.WaitGroup{}
-	s.lock.Lock()
-	wg.Add(len(s.callbacks))
-	for _, handler := range s.callbacks {
-		h := handler
-		go func() {
-			defer wg.Done()
-			h.OnShutdown(shutdownContext)
-		}()
-	}
-	s.lock.Unlock()
-	wg.Wait()
 }

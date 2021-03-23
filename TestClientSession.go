@@ -2,33 +2,10 @@ package sshserver
 
 import (
 	"context"
-	"errors"
 	"io"
 )
 
-// ErrAuthenticationFailed is the error that is returned from TestClient.Connect when the authentication failed.
-var ErrAuthenticationFailed = errors.New("authentication failed")
-
-// TestClient is an SSH client intended solely for testing purposes.
-type TestClient interface {
-	// Connect establishes a connection to the server.
-	Connect() (TestClientConnection, error)
-	// MustConnect is identical to Connect, but panics it if it cannot connect.
-	MustConnect() TestClientConnection
-}
-
-// TestClientConnection is an individual established connection to the server
-type TestClientConnection interface {
-	// Session establishes a new session channel
-	Session() (TestClientSession, error)
-
-	//MustSession is identical to Session but panics if a session cannot be requested.
-	MustSession() TestClientSession
-
-	// Close closes the connection and all sessions in it.
-	Close() error
-}
-
+// TestClientSession is a representation of a session channel inside a test client connection.
 type TestClientSession interface {
 	// SetEnv sets an environment variable or returns with an error.
 	SetEnv(name string, value string) error

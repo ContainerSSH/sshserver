@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Handler is the basic handler for SSH connections. It contains several methods to handle startup and operations of the
+// Handler is the basic conformanceTestHandler for SSH connections. It contains several methods to handle startup and operations of the
 //         server
 type Handler interface {
 	// OnReady is called when the server is ready to receive connections. It has an opportunity to return an error to
