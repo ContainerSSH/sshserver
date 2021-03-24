@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.21: Changing ChannelRejection to log.Message
+## 0.9.22: Changing ChannelRejection to log.Message
 
 In this release the `ChannelRejection` interface is changed to be a `log.Message` type to afford better compatibility and avoid exposing information to users that shouldn't be exposed. It also adds the `NewChannelRejection` method to make it easier to create rejection messages.
 
