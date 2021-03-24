@@ -28,7 +28,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Second)
+	defer srv.Stop(10 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -42,7 +42,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 	if err := session.Exec("echo \"Hello world!\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Second)
+	defer srv.Stop(10 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -88,7 +88,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 	if err := session.Exec("echo \"$FOO\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Second)
+	defer srv.Stop(10 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -200,7 +200,7 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Second)
+	defer srv.Stop(10 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -238,7 +238,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Second)
+	defer srv.Stop(10 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -255,7 +255,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	if err := session.Signal("USR1"); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("USR1 received\n")); err != nil {
 		t.Fatal(err)
