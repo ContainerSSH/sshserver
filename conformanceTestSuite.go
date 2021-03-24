@@ -42,7 +42,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 	if err := session.Exec("echo \"Hello world!\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 	if err := session.Exec("echo \"$FOO\""); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("Hello world!\n")); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	if err := session.Signal("USR1"); err != nil {
 		t.Fatal(err)
 	}
-	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := session.WaitForStdout(timeout, []byte("USR1 received\n")); err != nil {
 		t.Fatal(err)

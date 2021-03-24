@@ -506,10 +506,14 @@ func (s *serverImpl) handleSessionChannel(
 	}
 	handlerChannel, rejection := connection.OnSessionChannel(channelID, newChannel.ExtraData(), channelCallbacks)
 	if rejection != nil {
-		logger.Debug(log.Wrap(rejection, MNewChannelRejected, "New SSH channel rejected").Label("type", newChannel.ChannelType()))
+		logger.Debug(log.Wrap(
+			rejection,
+			MNewChannelRejected,
+			"New SSH channel rejected",
+		).Label("type", newChannel.ChannelType()))
 
-		if err := newChannel.Reject(rejection.Reason(), rejection.Message()); err != nil {
-			logger.Debug(log.Wrap(rejection, EReplyFailed, "Failed to send reply to channel request"))
+		if err := newChannel.Reject(rejection.Reason(), rejection.UserMessage()); err != nil {
+			logger.Debug(log.Wrap(err, EReplyFailed, "Failed to send reply to channel request"))
 		}
 		return
 	}

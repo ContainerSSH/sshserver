@@ -2,6 +2,8 @@ package sshserver
 
 import (
 	"context"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // AbstractSSHConnectionHandler is an empty implementation of the SSHConnectionHandler providing default methods.
@@ -29,7 +31,12 @@ func (a *AbstractSSHConnectionHandler) OnUnsupportedChannel(_ uint64, _ string, 
 func (a *AbstractSSHConnectionHandler) OnSessionChannel(_ uint64, _ []byte, _ SessionChannel) (
 	channel SessionChannelHandler, failureReason ChannelRejection,
 ) {
-	return nil, &notImplementedRejection{}
+	return nil, NewChannelRejection(
+		ssh.UnknownChannelType,
+		ENotImplemented,
+		"Cannot open session channel.",
+		"Session channels are currently not implemented",
+	)
 }
 
 // OnShutdown is called when a shutdown of the SSH server is desired. The shutdownContext is passed as a deadline

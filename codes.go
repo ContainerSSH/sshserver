@@ -77,3 +77,6 @@ const EBackendRejected = "SSH_BACKEND_REJECTED_HANDSHAKE"
 
 // ContainerSSH failed to set the socket to reuse. This may cause ContainerSSH to fail on a restart.
 const ESOReuseFailed = "SSH_SOCKET_REUSE_FAILED"
+
+// This message indicates that a feature is not implemented in the backend.
+const ENotImplemented = "SSH_NOT_IMPLEMENTED"

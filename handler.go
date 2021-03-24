@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/containerssh/log"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -134,10 +135,8 @@ type NetworkConnectionHandler interface {
 
 // ChannelRejection is an error type that also contains a Message and a Reason
 type ChannelRejection interface {
-	error
+	log.Message
 
-	// Message contains a message intended for the user.
-	Message() string
 	// Reason contains the SSH-specific reason for the rejection.
 	Reason() ssh.RejectionReason
 }

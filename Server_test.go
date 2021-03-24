@@ -407,7 +407,7 @@ func (h *serverHelper) start(t *testing.T) (hostKey []byte, err error) {
 
 func (h *serverHelper) stop() {
 	if h.lifecycle != nil {
-		shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownContext, cancelFunc := context.WithTimeout(context.Background(), 60*time.Second)
 		h.lifecycle.Stop(shutdownContext)
 		cancelFunc()
 	}
