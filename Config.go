@@ -91,7 +91,7 @@ func (cfg *Config) LoadHostKeys() ([]ssh.Signer, error) {
 		}
 		keyType := private.PublicKey().Type()
 
-		if err := HostKeyAlgo(keyType).Validate(); err != nil {
+		if err := KeyAlgo(keyType).Validate(); err != nil {
 			return nil, fmt.Errorf("unsupported host key algorithm %s on host key %d", keyType, index)
 		}
 		hostKeys = append(hostKeys, private)

@@ -2,7 +2,7 @@
 
 | Code | Explanation |
 |------|-------------|
-| `SSH_ALREADY_RUNNING` | The SSH serverImpl is already running and has been started again. This is a bug, please report it. |
+| `SSH_ALREADY_RUNNING` | The SSH server is already running and has been started again. This is a bug, please report it. |
 | `SSH_AUTH_FAILED` | The user has provided invalid credentials. |
 | `SSH_AUTH_SUCCESSFUL` | The user has provided valid credentials and is now authenticated. |
 | `SSH_AUTH_UNAVAILABLE` | The user has requested an authentication method that is currently unavailable. |

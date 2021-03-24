@@ -17,7 +17,7 @@ func (c CipherList) Validate() error {
 	return nil
 }
 
-// GetCipherNames returns a list of cipher names.
+// StringList returns a list of cipher names.
 func (c CipherList) StringList() []string {
 	ciphers := make([]string, len(c))
 	for i, v := range c {
