@@ -54,6 +54,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
 	}
 	_ = session.Close()
+	t.Log("test complete")
 }
 
 func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
@@ -100,6 +101,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
 	}
 	_ = session.Close()
+	t.Log("test complete")
 }
 
 func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
@@ -152,6 +154,7 @@ func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 		return
 	}
 	_ = session.Close()
+	t.Log("test complete")
 }
 
 func (c *conformanceTestSuite) testShellInteraction(t *testing.T, session TestClientSession) bool {
@@ -221,6 +224,7 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
 	}
 	_ = session.Close()
+	t.Log("test complete")
 }
 
 func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
@@ -262,6 +266,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	if err := session.WaitForStdout(timeout, []byte("USR1 received")); err != nil {
 		t.Fatal(err)
 	}
+	session.ReadRemaining()
 	if err := session.Wait(); err != nil {
 		t.Fatal(err)
 	}
@@ -269,4 +274,5 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 		t.Fatalf("invalid exit code returned: %d", session.ExitCode())
 	}
 	_ = session.Close()
+	t.Log("test complete")
 }

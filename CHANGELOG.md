@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.25: Adding readRemaining to signal test
+
+This release adds a readRemaining call to the signal test.
+
 ## 0.9.24: Use new agent feature to run tests
 
 This release brings down the timeouts again and uses the new `wait-signal` feature in the [ContainerSSH guest agent](https://github.com/ContainerSSH/agent) to wait for signal.
