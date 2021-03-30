@@ -252,6 +252,8 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	if err := session.Exec("/usr/bin/containerssh-agent wait-signal --signal USR1 --message \"USR1 received\""); err != nil {
 		t.Fatal(err)
 	}
+	// Wait for backing program to start
+	time.Sleep(time.Second)
 	if err := session.Signal("USR1"); err != nil {
 		t.Fatal(err)
 	}
