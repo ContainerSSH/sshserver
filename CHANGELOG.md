@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.24: Use new agent feature to run tests
+
+This release brings down the timeouts again and uses the new `wait-signal` feature in the [ContainerSSH guest agent](https://github.com/ContainerSSH/agent) to wait for signal.
+
 ## 0.9.23: Increased conformance test timeout
 
 This release increases the timeouts on the conformance tests.

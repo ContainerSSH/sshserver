@@ -28,7 +28,7 @@ func (c *conformanceTestSuite) singleProgramShouldRun(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Minute)
+	defer srv.Stop(1 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -71,7 +71,7 @@ func (c *conformanceTestSuite) settingEnvVariablesShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Minute)
+	defer srv.Stop(1 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -117,7 +117,7 @@ func (c *conformanceTestSuite) runningInteractiveShellShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Minute)
+	defer srv.Stop(1 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -200,7 +200,7 @@ func (c *conformanceTestSuite) reportingExitCodeShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Minute)
+	defer srv.Stop(1 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -238,7 +238,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 		user,
 	), logger)
 	srv.Start()
-	defer srv.Stop(10 * time.Minute)
+	defer srv.Stop(1 * time.Minute)
 
 	client := NewTestClient(srv.GetListen(), srv.GetHostKey(), user, logger)
 	connection, err := client.Connect()
@@ -249,7 +249,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 		_ = connection.Close()
 	}()
 	session := connection.MustSession()
-	if err := session.Exec("sleep infinity & PID=$!; trap \"kill $PID\" USR1; wait; echo \"USR1 received\""); err != nil {
+	if err := session.Exec("/usr/bin/containerssh-agent wait-signal --signal USR1 --message \"USR1 received\""); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.Signal("USR1"); err != nil {
@@ -257,7 +257,7 @@ func (c *conformanceTestSuite) sendingSignalsShouldWork(t *testing.T) {
 	}
 	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	if err := session.WaitForStdout(timeout, []byte("USR1 received\n")); err != nil {
+	if err := session.WaitForStdout(timeout, []byte("USR1 received")); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.Wait(); err != nil {
