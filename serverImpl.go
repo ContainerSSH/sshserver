@@ -72,6 +72,7 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 			// Assume listen socket closed
 			break
 		}
+		s.wg.Add(1)
 		go s.handleConnection(tcpConn)
 	}
 	lifecycle.Stopping()
@@ -403,6 +404,7 @@ func (s *serverImpl) handleConnection(conn net.Conn) {
 	if err != nil {
 		logger.Info(err)
 		_ = conn.Close()
+		s.wg.Done()
 		return
 	}
 	shutdownHandlerID := fmt.Sprintf("network-%s", connectionID)
@@ -425,6 +427,7 @@ func (s *serverImpl) handleConnection(conn net.Conn) {
 		logger.Debug(log.NewMessage(MDisconnected, "Client disconnected"))
 		handlerNetworkConnection.OnDisconnect()
 		_ = conn.Close()
+		s.wg.Done()
 		return
 	}
 	logger = logger.WithLabel("username", sshConn.User())
@@ -434,7 +437,6 @@ func (s *serverImpl) handleConnection(conn net.Conn) {
 	sshShutdownHandlerID := fmt.Sprintf("ssh-%s", connectionID)
 	s.lock.Unlock()
 
-	s.wg.Add(1)
 	go func() {
 		_ = sshConn.Wait()
 		logger.Debug(log.NewMessage(MDisconnected, "Client disconnected"))
@@ -484,8 +486,10 @@ func (s *serverImpl) handleChannels(
 		if !ok {
 			break
 		}
+		s.lock.Lock()
 		channelID := s.nextChannelID
 		s.nextChannelID++
+		s.lock.Unlock()
 		logger = logger.WithLabel("channelId", channelID)
 		if newChannel.ChannelType() != "session" {
 			logger.Debug(log.NewMessage(EUnsupportedChannelType, "Unsupported channel type requested").Label("type", newChannel.ChannelType()))
