@@ -65,15 +65,7 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	lifecycle.Running()
 	s.logger.Info(log.NewMessage(MServiceAvailable, "SSH server running on %s", s.cfg.Listen))
 
-	go func() {
-		<-lifecycle.Context().Done()
-		s.lock.Lock()
-		if err := s.listenSocket.Close(); err != nil {
-			s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket"))
-		}
-		s.listenSocket = nil
-		s.lock.Unlock()
-	}()
+	go s.handleListenSocketOnShutdown(lifecycle)
 	for {
 		tcpConn, err := netListener.Accept()
 		if err != nil {
@@ -94,6 +86,16 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 	close(allClientsExited)
 	<-shutdownHandlerExited
 	return nil
+}
+
+func (s *serverImpl) handleListenSocketOnShutdown(lifecycle service.Lifecycle) {
+	<-lifecycle.Context().Done()
+	s.lock.Lock()
+	if err := s.listenSocket.Close(); err != nil {
+		s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket"))
+	}
+	s.listenSocket = nil
+	s.lock.Unlock()
 }
 
 func (s *serverImpl) disconnectClients(lifecycle service.Lifecycle, allClientsExited chan struct{}) {
