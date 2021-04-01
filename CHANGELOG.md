@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.26: Fixed race condition on close
+
+This release fixes a potential race condition when closing connections.
+
 ## 0.9.25: Adding readRemaining to signal test
 
 This release adds a readRemaining call to the signal test.

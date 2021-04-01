@@ -129,5 +129,7 @@ func (c *channelWrapper) Close() error {
 }
 
 func (c *channelWrapper) onClose() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.closed = true
 }
