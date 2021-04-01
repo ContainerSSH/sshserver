@@ -40,9 +40,8 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 		s.clientSockets = make(map[*ssh.ServerConn]bool)
 	}
 	s.shuttingDown = false
-	s.lock.Unlock()
-
 	if alreadyRunning {
+		s.lock.Unlock()
 		return log.NewMessage(EAlreadyRunning, "SSH server is already running")
 	}
 
@@ -52,9 +51,11 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 
 	netListener, err := listenConfig.Listen(lifecycle.Context(), "tcp", s.cfg.Listen)
 	if err != nil {
+		s.lock.Unlock()
 		return log.Wrap(err, EStartFailed, "failed to start SSH server on %s", s.cfg.Listen)
 	}
 	s.listenSocket = netListener
+	s.lock.Unlock()
 	if err := s.handler.OnReady(); err != nil {
 		if err := netListener.Close(); err != nil {
 			s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket after failed startup"))
@@ -66,9 +67,12 @@ func (s *serverImpl) RunWithLifecycle(lifecycle service.Lifecycle) error {
 
 	go func() {
 		<-lifecycle.Context().Done()
+		s.lock.Lock()
 		if err := s.listenSocket.Close(); err != nil {
 			s.logger.Warning(log.Wrap(err, EListenCloseFailed, "failed to close listen socket"))
 		}
+		s.listenSocket = nil
+		s.lock.Unlock()
 	}()
 	for {
 		tcpConn, err := netListener.Accept()
