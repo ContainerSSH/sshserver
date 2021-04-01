@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.0: First stable release
+
+This is the first stable tag of this library for ContainerSSH 0.4.0.
+
 ## 0.9.26: Fixed race condition on close
 
 This release fixes a potential race condition when closing connections.

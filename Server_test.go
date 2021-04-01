@@ -475,7 +475,7 @@ func (f *fullHandler) OnReady() error {
 func (f *fullHandler) OnShutdown(shutdownContext context.Context) {
 	f.shutdownContext = shutdownContext
 	<-f.shutdownContext.Done()
-	f.shutdownDone <- struct{}{}
+	close(f.shutdownDone)
 }
 
 func (f *fullHandler) OnNetworkConnection(_ net.TCPAddr, _ string) (sshserver.NetworkConnectionHandler, error) {
