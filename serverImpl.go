@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"context"
@@ -117,21 +117,26 @@ func (s *serverImpl) disconnectClients(lifecycle service.Lifecycle, allClientsEx
 func (s *serverImpl) createPasswordAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
 	logger log.Logger,
-) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-	return func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		authResponse, err := handlerNetworkConnection.OnAuthPassword(conn.User(), password)
+) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, map[string]string, error) {
+	return func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, map[string]string, error) {
+		authResponse, metadata, err := handlerNetworkConnection.OnAuthPassword(
+			conn.User(),
+			password,
+			string(conn.ClientVersion()),
+		)
+		//goland:noinspection GoNilness
 		switch authResponse {
 		case AuthResponseSuccess:
 			s.logAuthSuccessful(logger, conn, "Password")
-			return &ssh.Permissions{}, nil
+			return &ssh.Permissions{}, metadata, nil
 		case AuthResponseFailure:
 			err = s.wrapAndLogAuthFailure(logger, conn, "Password", err)
-			return nil, err
+			return nil, nil, err
 		case AuthResponseUnavailable:
 			err = s.wrapAndLogAuthUnavailable(logger, conn, "Password", err)
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, fmt.Errorf("authentication currently unavailable")
+		return nil, nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
@@ -199,34 +204,39 @@ func (s *serverImpl) logAuthSuccessful(logger log.Logger, conn ssh.ConnMetadata,
 func (s *serverImpl) createPubKeyAuthenticator(
 	handlerNetworkConnection NetworkConnectionHandler,
 	logger log.Logger,
-) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
-	return func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+) func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, map[string]string, error) {
+	return func(conn ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, map[string]string, error) {
 		authorizedKey := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pubKey)))
-		authResponse, err := handlerNetworkConnection.OnAuthPubKey(conn.User(), authorizedKey)
+		authResponse, metadata, err := handlerNetworkConnection.OnAuthPubKey(
+			conn.User(),
+			authorizedKey,
+			string(conn.ClientVersion()),
+		)
+		//goland:noinspection GoNilness
 		switch authResponse {
 		case AuthResponseSuccess:
 			s.logAuthSuccessful(logger, conn, "Public key")
-			return &ssh.Permissions{}, nil
+			return &ssh.Permissions{}, metadata, nil
 		case AuthResponseFailure:
 			err = s.wrapAndLogAuthFailure(logger, conn, "Public key", err)
-			return nil, err
+			return nil, nil, err
 		case AuthResponseUnavailable:
 			err = s.wrapAndLogAuthUnavailable(logger, conn, "Public key", err)
-			return nil, err
+			return nil, nil, err
 		}
 		// This should never happen
-		return nil, fmt.Errorf("authentication currently unavailable")
+		return nil, nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
 func (s *serverImpl) createKeyboardInteractiveHandler(
 	handlerNetworkConnection *networkConnectionWrapper,
 	logger log.Logger,
-) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+) func(conn ssh.ConnMetadata, challenge ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, map[string]string, error) {
 	return func(
 		conn ssh.ConnMetadata,
 		challenge ssh.KeyboardInteractiveChallenge,
-	) (*ssh.Permissions, error) {
+	) (*ssh.Permissions, map[string]string, error) {
 		challengeWrapper := func(
 			instruction string,
 			questions KeyboardInteractiveQuestions,
@@ -249,19 +259,24 @@ func (s *serverImpl) createKeyboardInteractiveHandler(
 			}
 			return answers, err
 		}
-		authResponse, err := handlerNetworkConnection.OnAuthKeyboardInteractive(conn.User(), challengeWrapper)
+		authResponse, metadata, err := handlerNetworkConnection.OnAuthKeyboardInteractive(
+			conn.User(),
+			challengeWrapper,
+			string(conn.ClientVersion()),
+		)
+		//goland:noinspection GoNilness
 		switch authResponse {
 		case AuthResponseSuccess:
 			s.logAuthSuccessful(logger, conn, "Keyboard-interactive")
-			return &ssh.Permissions{}, nil
+			return &ssh.Permissions{}, metadata, nil
 		case AuthResponseFailure:
 			err = s.wrapAndLogAuthFailure(logger, conn, "Keyboard-interactive", err)
-			return nil, err
+			return nil, nil, err
 		case AuthResponseUnavailable:
 			err = s.wrapAndLogAuthUnavailable(logger, conn, "Keyboard-interactive", err)
-			return nil, err
+			return nil, nil, err
 		}
-		return nil, fmt.Errorf("authentication currently unavailable")
+		return nil, nil, fmt.Errorf("authentication currently unavailable")
 	}
 }
 
@@ -316,12 +331,16 @@ func (s *serverImpl) createKeyboardInteractiveCallback(
 		conn ssh.ConnMetadata,
 		challenge ssh.KeyboardInteractiveChallenge,
 	) (*ssh.Permissions, error) {
-		permissions, err := keyboardInteractiveHandler(conn, challenge)
+		permissions, metadata, err := keyboardInteractiveHandler(conn, challenge)
 		if err != nil {
 			return permissions, err
 		}
 		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
-		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(
+			conn.User(),
+			string(conn.ClientVersion()),
+			metadata,
+		)
 		if err != nil {
 			err = log.WrapUser(
 				err,
@@ -344,12 +363,16 @@ func (s *serverImpl) createPubKeyCallback(
 ) func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	pubKeyHandler := s.createPubKeyAuthenticator(handlerNetworkConnection, logger)
 	pubkeyCallback := func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-		permissions, err := pubKeyHandler(conn, key)
+		permissions, metadata, err := pubKeyHandler(conn, key)
 		if err != nil {
 			return permissions, err
 		}
 		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
-		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(
+			conn.User(),
+			string(conn.ClientVersion()),
+			metadata,
+		)
 		if err != nil {
 			err = log.WrapUser(
 				err,
@@ -372,12 +395,12 @@ func (s *serverImpl) createPasswordCallback(
 ) func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 	passwordHandler := s.createPasswordAuthenticator(handlerNetworkConnection, logger)
 	passwordCallback := func(conn ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
-		permissions, err := passwordHandler(conn, password)
+		permissions, metadata, err := passwordHandler(conn, password)
 		if err != nil {
 			return permissions, err
 		}
 		// HACK: check HACKS.md "OnHandshakeSuccess conformanceTestHandler"
-		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User())
+		sshConnectionHandler, err := handlerNetworkConnection.OnHandshakeSuccess(conn.User(), string(conn.ClientVersion()), metadata)
 		if err != nil {
 			err = log.WrapUser(
 				err,

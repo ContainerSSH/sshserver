@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"github.com/containerssh/log"

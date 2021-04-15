@@ -1,7 +1,7 @@
 // +build !windows
 // +build !plan9
 
-package sshserver
+package v2
 
 import (
 	"syscall"

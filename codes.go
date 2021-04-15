@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 // A user has connected over SSH.
 const MConnected = "SSH_CONNECTED"

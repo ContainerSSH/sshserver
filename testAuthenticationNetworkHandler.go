@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"context"
@@ -16,7 +16,8 @@ func (t *testAuthenticationNetworkHandler) OnAuthKeyboardInteractive(
 		instruction string,
 		questions KeyboardInteractiveQuestions,
 	) (answers KeyboardInteractiveAnswers, err error),
-) (response AuthResponse, reason error) {
+	_ string,
+) (response AuthResponse, metadata map[string]string, reason error) {
 	var foundUser *TestUser
 	for _, user := range t.rootHandler.users {
 		if user.Username() == username {
@@ -25,7 +26,7 @@ func (t *testAuthenticationNetworkHandler) OnAuthKeyboardInteractive(
 		}
 	}
 	if foundUser == nil {
-		return AuthResponseFailure, fmt.Errorf("user not found")
+		return AuthResponseFailure, nil, fmt.Errorf("user not found")
 	}
 
 	var questions []KeyboardInteractiveQuestion
@@ -39,18 +40,18 @@ func (t *testAuthenticationNetworkHandler) OnAuthKeyboardInteractive(
 
 	answers, err := challenge("", questions)
 	if err != nil {
-		return AuthResponseFailure, err
+		return AuthResponseFailure, nil, err
 	}
 	for question, expectedAnswer := range foundUser.keyboardInteractive {
 		answerText, err := answers.GetByQuestionText(question)
 		if err != nil {
-			return AuthResponseFailure, err
+			return AuthResponseFailure, nil, err
 		}
 		if answerText != expectedAnswer {
-			return AuthResponseFailure, fmt.Errorf("invalid response")
+			return AuthResponseFailure, nil, fmt.Errorf("invalid response")
 		}
 	}
-	return AuthResponseSuccess, nil
+	return AuthResponseSuccess, nil, nil
 }
 
 func (t *testAuthenticationNetworkHandler) OnDisconnect() {
@@ -61,35 +62,35 @@ func (t *testAuthenticationNetworkHandler) OnShutdown(shutdownContext context.Co
 	t.backend.OnShutdown(shutdownContext)
 }
 
-func (t *testAuthenticationNetworkHandler) OnAuthPassword(username string, password []byte) (response AuthResponse, reason error) {
+func (t *testAuthenticationNetworkHandler) OnAuthPassword(username string, password []byte, clientVersion string) (response AuthResponse, metadata map[string]string, reason error) {
 	for _, user := range t.rootHandler.users {
 		if user.username == username && user.password == string(password) {
-			return AuthResponseSuccess, nil
+			return AuthResponseSuccess, nil, nil
 		}
 	}
-	return AuthResponseFailure, ErrAuthenticationFailed
+	return AuthResponseFailure, nil, ErrAuthenticationFailed
 }
 
-func (t *testAuthenticationNetworkHandler) OnAuthPubKey(username string, pubKey string) (response AuthResponse, reason error) {
+func (t *testAuthenticationNetworkHandler) OnAuthPubKey(username string, pubKey string, clientVersion string) (response AuthResponse, metadata map[string]string, reason error) {
 	for _, user := range t.rootHandler.users {
 		if user.username == username {
 			for _, authorizedKey := range user.authorizedKeys {
 				if pubKey == authorizedKey {
-					return AuthResponseSuccess, nil
+					return AuthResponseSuccess, nil,nil
 				}
 			}
 		}
 	}
-	return AuthResponseFailure, ErrAuthenticationFailed
+	return AuthResponseFailure, nil, ErrAuthenticationFailed
 }
 
 func (t *testAuthenticationNetworkHandler) OnHandshakeFailed(err error) {
 	t.backend.OnHandshakeFailed(err)
 }
 
-func (t *testAuthenticationNetworkHandler) OnHandshakeSuccess(username string) (
+func (t *testAuthenticationNetworkHandler) OnHandshakeSuccess(username string, clientVersion string, metadata map[string]string) (
 	connection SSHConnectionHandler,
 	failureReason error,
 ) {
-	return t.backend.OnHandshakeSuccess(username)
+	return t.backend.OnHandshakeSuccess(username, clientVersion, metadata)
 }

@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"context"
@@ -14,7 +14,7 @@ type testNetworkHandlerImpl struct {
 	shutdown     bool
 }
 
-func (t *testNetworkHandlerImpl) OnHandshakeSuccess(username string) (
+func (t *testNetworkHandlerImpl) OnHandshakeSuccess(username string, clientVersion string, metadata map[string]string) (
 	connection SSHConnectionHandler,
 	failureReason error,
 ) {

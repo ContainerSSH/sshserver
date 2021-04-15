@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 // NewTestUser creates a user that can be used with NewTestHandler and NewTestClient.
 func NewTestUser(username string) *TestUser {

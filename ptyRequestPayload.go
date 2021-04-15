@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 type ptyRequestPayload struct {
 	Term     string

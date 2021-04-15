@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"context"
@@ -11,15 +11,15 @@ type AbstractNetworkConnectionHandler struct {
 
 // OnAuthPassword is called when a user attempts a password authentication. The implementation must always supply
 //                AuthResponse and may supply error as a reason description.
-func (a *AbstractNetworkConnectionHandler) OnAuthPassword(_ string, _ []byte) (response AuthResponse, reason error) {
-	return AuthResponseUnavailable, nil
+func (a *AbstractNetworkConnectionHandler) OnAuthPassword(_ string, _ []byte, _ string) (response AuthResponse, metadata map[string]string, reason error) {
+	return AuthResponseUnavailable, nil, nil
 }
 
 // OnAuthPassword is called when a user attempts a pubkey authentication. The implementation must always supply
 //                AuthResponse and may supply error as a reason description. The pubKey parameter is an SSH key in
 //               the form of "ssh-rsa KEY HERE".
-func (a *AbstractNetworkConnectionHandler) OnAuthPubKey(_ string, _ string) (response AuthResponse, reason error) {
-	return AuthResponseUnavailable, nil
+func (a *AbstractNetworkConnectionHandler) OnAuthPubKey(_ string, _ string, _ string) (response AuthResponse, metadata map[string]string, reason error) {
+	return AuthResponseUnavailable, nil, nil
 }
 
 // OnAuthKeyboardInteractive is a callback for interactive authentication. The implementer will be passed a callback
@@ -31,8 +31,9 @@ func (a *AbstractNetworkConnectionHandler) OnAuthKeyboardInteractive(
 		instruction string,
 		questions KeyboardInteractiveQuestions,
 	) (answers KeyboardInteractiveAnswers, err error),
-) (response AuthResponse, reason error) {
-	return AuthResponseUnavailable, nil
+	_ string,
+) (response AuthResponse, metadata map[string]string, reason error) {
+	return AuthResponseUnavailable, nil, nil
 }
 
 // OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication

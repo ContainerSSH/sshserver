@@ -1,11 +1,11 @@
-package sshserver_test
+package v2_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/containerssh/sshserver"
+	sshserver "github.com/containerssh/sshserver/v2"
 
 	"github.com/containerssh/log"
 )

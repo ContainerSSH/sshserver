@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 // CipherList is a list of supported ciphers
 type CipherList []Cipher

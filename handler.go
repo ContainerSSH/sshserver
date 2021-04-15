@@ -1,4 +1,4 @@
-package sshserver
+package v2
 
 import (
 	"context"
@@ -30,7 +30,7 @@ type Handler interface {
 	OnNetworkConnection(client net.TCPAddr, connectionID string) (NetworkConnectionHandler, error)
 }
 
-// AuthResponse indicates the various response states for the authentication process.
+// AuthResponse is the result of the authentication process.
 type AuthResponse uint8
 
 const (
@@ -96,12 +96,12 @@ func (k *KeyboardInteractiveAnswers) GetByQuestionText(question string) (string,
 type NetworkConnectionHandler interface {
 	// OnAuthPassword is called when a user attempts a password authentication. The implementation must always supply
 	//                AuthResponse and may supply error as a reason description.
-	OnAuthPassword(username string, password []byte) (response AuthResponse, reason error)
+	OnAuthPassword(username string, password []byte, clientVersion string) (response AuthResponse, metadata map[string]string, reason error)
 
 	// OnAuthPassword is called when a user attempts a pubkey authentication. The implementation must always supply
 	//                AuthResponse and may supply error as a reason description. The pubKey parameter is an SSH key in
 	//               the form of "ssh-rsa KEY HERE".
-	OnAuthPubKey(username string, pubKey string) (response AuthResponse, reason error)
+	OnAuthPubKey(username string, pubKey string, clientVersion string) (response AuthResponse, metadata map[string]string, reason error)
 
 	// OnAuthKeyboardInteractive is a callback for interactive authentication. The implementer will be passed a callback
 	// function that can be used to issue challenges to the user. These challenges can, but do not have to contain
@@ -112,7 +112,8 @@ type NetworkConnectionHandler interface {
 			instruction string,
 			questions KeyboardInteractiveQuestions,
 		) (answers KeyboardInteractiveAnswers, err error),
-	) (response AuthResponse, reason error)
+	    clientVersion string,
+	) (response AuthResponse, metadata map[string]string, reason error)
 
 	// OnHandshakeFailed is called when the SSH handshake failed. This method is also called after an authentication
 	//                   failure. After this method is the connection will be closed and the OnDisconnect method will be
@@ -122,7 +123,7 @@ type NetworkConnectionHandler interface {
 	// OnHandshakeSuccess is called when the SSH handshake was successful. It returns connection to process
 	//                    requests, or failureReason to indicate that a backend error has happened. In this case, the
 	//                    connection will be closed and OnDisconnect will be called.
-	OnHandshakeSuccess(username string) (connection SSHConnectionHandler, failureReason error)
+	OnHandshakeSuccess(username string, clientVersion string, metadata map[string]string) (connection SSHConnectionHandler, failureReason error)
 
 	// OnDisconnect is called when the network connection is closed.
 	OnDisconnect()

@@ -1,4 +1,4 @@
-package sshserver_test
+package v2_test
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/containerssh/sshserver"
+	sshserver "github.com/containerssh/sshserver/v2"
 )
 
 //region Tests
@@ -497,21 +497,22 @@ type fullNetworkConnectionHandler struct {
 func (f *fullNetworkConnectionHandler) OnAuthPassword(
 	username string,
 	password []byte,
-) (response sshserver.AuthResponse, reason error) {
+	_ string,
+) (response sshserver.AuthResponse, metadata map[string]string, reason error) {
 	if storedPassword, ok := f.handler.passwords[username]; ok && bytes.Equal(storedPassword, password) {
-		return sshserver.AuthResponseSuccess, nil
+		return sshserver.AuthResponseSuccess, nil, nil
 	}
-	return sshserver.AuthResponseFailure, fmt.Errorf("authentication failed")
+	return sshserver.AuthResponseFailure, nil, fmt.Errorf("authentication failed")
 }
 
-func (f *fullNetworkConnectionHandler) OnAuthPubKey(username string, pubKey string) (response sshserver.AuthResponse, reason error) {
+func (f *fullNetworkConnectionHandler) OnAuthPubKey(username string, pubKey string, _ string,) (response sshserver.AuthResponse, metadata map[string]string, reason error) {
 	if storedPubKey, ok := f.handler.pubKeys[username]; ok && storedPubKey == pubKey {
-		return sshserver.AuthResponseSuccess, nil
+		return sshserver.AuthResponseSuccess, nil, nil
 	}
-	return sshserver.AuthResponseFailure, fmt.Errorf("authentication failed")
+	return sshserver.AuthResponseFailure, nil, fmt.Errorf("authentication failed")
 }
 
-func (f *fullNetworkConnectionHandler) OnHandshakeSuccess(_ string) (connection sshserver.SSHConnectionHandler, failureReason error) {
+func (f *fullNetworkConnectionHandler) OnHandshakeSuccess(_ string, _ string, _ map[string]string) (connection sshserver.SSHConnectionHandler, failureReason error) {
 	return &fullSSHConnectionHandler{
 		handler: f.handler,
 	}, nil
