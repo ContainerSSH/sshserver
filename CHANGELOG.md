@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.0-alpha.1: Metadata
+
+This release adds the ability to return metadata from the authentication process.
+
 ## 1.0.0: First stable release
 
 This is the first stable tag of this library for ContainerSSH 0.4.0.
