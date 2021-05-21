@@ -3,7 +3,7 @@ module github.com/containerssh/sshserver/v2
 go 1.16
 
 require (
-	github.com/containerssh/log v1.0.0
+	github.com/containerssh/log v1.1.6
 	github.com/containerssh/service v1.0.0
 	github.com/containerssh/structutils v1.0.0
 	github.com/containerssh/unixutils v1.0.0
