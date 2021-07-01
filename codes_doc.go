@@ -1,3 +1,3 @@
-package v2
+package sshserver
 
 //go:generate containerssh-generate-codes

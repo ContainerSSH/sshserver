@@ -1,4 +1,4 @@
-package v2
+package sshserver
 
 // TestClientConnection is an individual established connection to the server
 type TestClientConnection interface {

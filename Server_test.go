@@ -1,4 +1,4 @@
-package v2_test
+package sshserver_test
 
 import (
 	"bytes"
