@@ -1,6 +1,6 @@
 // +build plan9
 
-package v2
+package sshserver
 
 import (
 	"syscall"
