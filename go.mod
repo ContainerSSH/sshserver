@@ -3,14 +3,15 @@ module github.com/containerssh/sshserver/v2
 go 1.16
 
 require (
-	github.com/containerssh/log v1.0.0
+	github.com/containerssh/log v1.1.6
 	github.com/containerssh/service v1.0.0
-	github.com/containerssh/structutils v1.0.0
+	github.com/containerssh/structutils v1.1.0
 	github.com/containerssh/unixutils v1.0.0
-	github.com/google/uuid v1.2.0
+	github.com/google/uuid v1.3.0
+	github.com/mattn/go-shellwords v1.0.12 // indirect
 	github.com/stretchr/testify v1.7.0
-	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
-	golang.org/x/sys v0.0.0-20210331175145-43e1dd70ce54 // indirect
+	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
+	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c // indirect
 )
 
 // Fixes CVE-2020-9283

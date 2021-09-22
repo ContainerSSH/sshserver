@@ -1,4 +1,4 @@
-package v2
+package sshserver
 
 type subsystemRequestPayload struct {
 	Subsystem string

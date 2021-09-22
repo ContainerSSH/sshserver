@@ -1,4 +1,4 @@
-package v2
+package sshserver
 
 // NewTestAuthenticationHandler creates a new backend that authenticates a user based on the users variable and passes
 // all further calls to the backend.

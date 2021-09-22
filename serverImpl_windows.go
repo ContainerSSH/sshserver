@@ -1,6 +1,6 @@
 // +build windows
 
-package v2
+package sshserver
 
 import (
 	"syscall"
